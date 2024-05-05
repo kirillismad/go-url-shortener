@@ -11,7 +11,8 @@
             "mode": "auto",
             "internalConsoleOptions": "openOnSessionStart",
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/main.go"
+            "program": "${workspaceFolder}/main.go",
+            "envFile": "${workspaceFolder}/.env"
         }
     ]
 }
