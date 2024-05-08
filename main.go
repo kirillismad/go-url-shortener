@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,11 +24,105 @@ func PingHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		err := db.PingContext(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal Server Error"))
+			fmt.Fprintln(w, "Internal Server Error")
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("200 OK\n"))
+		fmt.Fprintln(w, "200 OK")
+	}
+}
+
+// CREATE TABLE IF NOT EXISTS "links" (
+// 	"id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL UNIQUE,
+// 	"short_id" text NOT NULL UNIQUE,
+// 	"href" text NOT NULL UNIQUE,
+// 	"created_at" timestamp with time zone NOT NULL,
+// 	"usage_count" timestamp with time zone NOT NULL,
+// 	"usage_at" timestamp with time zone NOT NULL,
+// 	PRIMARY KEY ("id")
+// );
+
+type Link struct {
+	ID         int64
+	ShortID    string
+	Href       string
+	CreatedAt  time.Time
+	UsageCount int64
+	UsageAt    time.Time
+}
+
+type LinkInput struct {
+	Href string `json:"href"`
+}
+
+type LinkOutput struct {
+	ShortLink string `json:"shortLink"`
+}
+
+var Alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_")
+
+const shortIDLen = 11
+
+func generateShortID() string {
+	b := make([]rune, 0, shortIDLen)
+
+	alphabetLen := len(Alphabet)
+	for i := 0; i < shortIDLen; i++ {
+		b = append(b, Alphabet[rand.Intn(alphabetLen)])
+	}
+	return string(b)
+}
+
+func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
+	const query = `
+		INSERT INTO "links" ("short_id", "href") 
+		VALUES ($1, $2)
+	`
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "io.ReadAll(): %v", err)
+			return
+		}
+
+		var input LinkInput
+		if err = json.Unmarshal(body, &input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "json.Unmarshal(): %v", err)
+			return
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "db.Begin(): %v", err)
+			return
+		}
+		defer tx.Rollback()
+
+		shortID := generateShortID()
+		_, err = db.Exec(query, shortID, input.Href)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "db.Exec(): %v", err)
+			return
+		}
+
+		if err = tx.Commit(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "db.Begin(): %v", err)
+			return
+		}
+
+		content, err := json.Marshal(LinkOutput{ShortLink: "/s/" + shortID})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(content)
 	}
 }
 
@@ -51,7 +148,6 @@ type Config struct {
 func main() {
 	ctx := context.Background()
 
-	// docker run --name url_shortener_db --rm -p 5432:5432 -e POSTGRES_PASSWORD=dbpassword -e POSTGRES_USER=dbuser -e POSTGRES_DB=dbname postgres:16
 	var cfg Config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		log.Fatalf("envconfig.Process: %v", err)
@@ -80,6 +176,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /ping", PingHandler(db))
+	mux.HandleFunc("POST /new", CreateLinkHandler(db))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
