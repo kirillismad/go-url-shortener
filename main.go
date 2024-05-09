@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +19,30 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/sethvargo/go-envconfig"
 )
+
+type PingServer struct {
+	db *sql.DB
+}
+
+func (s PingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := s.db.PingContext(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Internal Server Error")
+		return
+	}
+
+	b, err := json.Marshal(map[string]string{"message": "pong"})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Internal Server Error")
+		return
+	}
+
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(b)
+}
 
 func PingHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -31,16 +56,6 @@ func PingHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		fmt.Fprintln(w, "200 OK")
 	}
 }
-
-// CREATE TABLE IF NOT EXISTS "links" (
-// 	"id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL UNIQUE,
-// 	"short_id" text NOT NULL UNIQUE,
-// 	"href" text NOT NULL UNIQUE,
-// 	"created_at" timestamp with time zone NOT NULL,
-// 	"usage_count" timestamp with time zone NOT NULL,
-// 	"usage_at" timestamp with time zone NOT NULL,
-// 	PRIMARY KEY ("id")
-// );
 
 type Link struct {
 	ID         int64
@@ -66,19 +81,25 @@ const shortIDLen = 11
 func generateShortID() string {
 	b := make([]rune, 0, shortIDLen)
 
-	alphabetLen := len(Alphabet)
 	for i := 0; i < shortIDLen; i++ {
-		b = append(b, Alphabet[rand.Intn(alphabetLen)])
+		idx := rand.Intn(len(Alphabet))
+		b = append(b, Alphabet[idx])
 	}
 	return string(b)
 }
 
+func IsValidURL(input string) bool {
+	u, err := url.Parse(input)
+	if err != nil {
+		return false
+	}
+
+	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
+}
+
 func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
-	const query = `
-		INSERT INTO "links" ("short_id", "href") 
-		VALUES ($1, $2)
-	`
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -93,7 +114,13 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		tx, err := db.Begin()
+		if !IsValidURL(input.Href) {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Invalid link: %s", input.Href)
+			return
+		}
+
+		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "db.Begin(): %v", err)
@@ -101,21 +128,40 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		}
 		defer tx.Rollback()
 
-		shortID := generateShortID()
-		_, err = db.Exec(query, shortID, input.Href)
+		var shortID string
+		for {
+			shortID = generateShortID()
+			var exists bool
+			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`, shortID).Scan(&exists)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, "tx.QueryRow: %v", err)
+				return
+			}
+			if !exists {
+				break
+			}
+		}
+
+		query := `
+			INSERT INTO "links" ("short_id", "href") 
+			VALUES ($1, $2)
+		`
+		_, err = tx.ExecContext(ctx, query, shortID, input.Href)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "db.Exec(): %v", err)
+			fmt.Fprintf(w, "tx.Exec(): %v", err)
 			return
 		}
 
 		if err = tx.Commit(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "db.Begin(): %v", err)
+			fmt.Fprintf(w, "tx.Commit(): %v", err)
 			return
 		}
 
-		content, err := json.Marshal(LinkOutput{ShortLink: "/s/" + shortID})
+		output := LinkOutput{ShortLink: "/s/" + shortID}
+		content, err := json.Marshal(output)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -175,7 +221,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /ping", PingHandler(db))
+	mux.Handle("GET /ping", PingServer{db: db})
 	mux.HandleFunc("POST /new", CreateLinkHandler(db))
 
 	server := &http.Server{
