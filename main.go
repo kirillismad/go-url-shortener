@@ -73,12 +73,34 @@ func isValidURL(input string) bool {
 	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
 }
 
+type TxOption func(*sql.TxOptions)
+
+func WithIsolationLevel(level sql.IsolationLevel) TxOption {
+	return func(opt *sql.TxOptions) {
+		opt.Isolation = level
+	}
+}
+
+func WithReadOnly(value bool) TxOption {
+	return func(opt *sql.TxOptions) {
+		opt.ReadOnly = value
+	}
+}
+
 type CreateLinkHandler struct {
 	db *sql.DB
 }
 
-func InTransaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
+func InTransaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error, opts ...TxOption) error {
+	var txOptions *sql.TxOptions
+	if len(opts) != 0 {
+		txOptions = &sql.TxOptions{}
+		for _, o := range opts {
+			o(txOptions)
+		}
+	}
+
+	tx, err := db.BeginTx(ctx, txOptions)
 	if err != nil {
 		return err
 	}
