@@ -20,27 +20,17 @@ import (
 	"github.com/sethvargo/go-envconfig"
 )
 
-type PingServer struct {
-	db *sql.DB
-}
+type J map[string]interface{}
 
-func (s PingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	err := s.db.PingContext(r.Context())
+func WriteJson(ctx context.Context, w http.ResponseWriter, status int, content any) {
+	b, err := json.Marshal(content)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "Internal Server Error")
-		return
-	}
-
-	b, err := json.Marshal(map[string]string{"message": "pong"})
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "Internal Server Error")
 		return
 	}
 
 	w.Header().Set("content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	w.Write(b)
 }
 
@@ -49,11 +39,11 @@ func PingHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		err := db.PingContext(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, "Internal Server Error")
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "200 OK")
+
+		content := J{"msg": "pong"}
+		WriteJson(r.Context(), w, http.StatusOK, content)
 	}
 }
 
@@ -102,64 +92,28 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		ctx := r.Context()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			msg := fmt.Sprintf("io.ReadAll(): %v", err)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			msg := fmt.Sprintf("io.ReadAll: %v", err)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 
 		var input LinkInput
 		if err = json.Unmarshal(body, &input); err != nil {
-			msg := fmt.Sprintf("json.Unmarshal(): %v", err)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			msg := fmt.Sprintf("json.Unmarshal: %v", err)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 
 		if !IsValidURL(input.Href) {
 			msg := fmt.Sprintf("Invalid link: %s", input.Href)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
-			msg := fmt.Sprintf("db.Begin(): %v", err)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			msg := fmt.Sprintf("db.Begin: %v", err)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 		defer tx.Rollback()
@@ -168,19 +122,11 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		for {
 			shortID = generateShortID()
 			var exists bool
-			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`, shortID).Scan(&exists)
+			query := `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`
+			err = tx.QueryRowContext(ctx, query, shortID).Scan(&exists)
 			if err != nil {
 				msg := fmt.Sprintf("tx.QueryRow: %v", err)
-
-				b, err2 := json.Marshal(map[string]string{"msg": msg})
-				if err2 != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("content-type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write(b)
+				WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 				return
 
 			}
@@ -195,45 +141,19 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		`
 		_, err = tx.ExecContext(ctx, query, shortID, input.Href)
 		if err != nil {
-			msg := fmt.Sprintf("tx.Exec(): %v", err)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			msg := fmt.Sprintf("tx.Exec: %v", err)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 
 		if err = tx.Commit(); err != nil {
-			msg := fmt.Sprintf("tx.Commit(): %v", err)
-
-			b, err2 := json.Marshal(map[string]string{"msg": msg})
-			if err2 != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("content-type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(b)
+			msg := fmt.Sprintf("tx.Commit: %v", err)
+			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
 			return
 		}
 
 		output := LinkOutput{ShortLink: "/s/" + shortID}
-		content, err := json.Marshal(output)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(content)
+		WriteJson(ctx, w, http.StatusOK, output)
 	}
 }
 
@@ -286,7 +206,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /ping", PingServer{db: db})
+	mux.HandleFunc("GET /ping", PingHandler(db))
 	mux.HandleFunc("POST /new", CreateLinkHandler(db))
 
 	server := &http.Server{
