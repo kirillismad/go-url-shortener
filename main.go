@@ -102,28 +102,64 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		ctx := r.Context()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			msg := fmt.Sprintf("io.ReadAll(): %v", err)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "io.ReadAll(): %v", err)
+			w.Write(b)
 			return
 		}
 
 		var input LinkInput
 		if err = json.Unmarshal(body, &input); err != nil {
+			msg := fmt.Sprintf("json.Unmarshal(): %v", err)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "json.Unmarshal(): %v", err)
+			w.Write(b)
 			return
 		}
 
 		if !IsValidURL(input.Href) {
+			msg := fmt.Sprintf("Invalid link: %s", input.Href)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "Invalid link: %s", input.Href)
+			w.Write(b)
 			return
 		}
 
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "db.Begin(): %v", err)
+			msg := fmt.Sprintf("db.Begin(): %v", err)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(b)
 			return
 		}
 		defer tx.Rollback()
@@ -134,9 +170,19 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			var exists bool
 			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`, shortID).Scan(&exists)
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "tx.QueryRow: %v", err)
+				msg := fmt.Sprintf("tx.QueryRow: %v", err)
+
+				b, err2 := json.Marshal(map[string]string{"msg": msg})
+				if err2 != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				w.Header().Set("content-type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write(b)
 				return
+
 			}
 			if !exists {
 				break
@@ -149,14 +195,32 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 		`
 		_, err = tx.ExecContext(ctx, query, shortID, input.Href)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "tx.Exec(): %v", err)
+			msg := fmt.Sprintf("tx.Exec(): %v", err)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(b)
 			return
 		}
 
 		if err = tx.Commit(); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "tx.Commit(): %v", err)
+			msg := fmt.Sprintf("tx.Commit(): %v", err)
+
+			b, err2 := json.Marshal(map[string]string{"msg": msg})
+			if err2 != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(b)
 			return
 		}
 
@@ -167,6 +231,7 @@ func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
+		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write(content)
 	}
