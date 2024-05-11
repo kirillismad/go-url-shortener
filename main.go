@@ -64,20 +64,6 @@ type LinkOutput struct {
 	ShortLink string `json:"shortLink"`
 }
 
-var Alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_")
-
-const shortIDLen = 11
-
-func generateShortID() string {
-	b := make([]rune, 0, shortIDLen)
-
-	for i := 0; i < shortIDLen; i++ {
-		idx := rand.Intn(len(Alphabet))
-		b = append(b, Alphabet[idx])
-	}
-	return string(b)
-}
-
 func isValidURL(input string) bool {
 	u, err := url.Parse(input)
 	if err != nil {
@@ -87,23 +73,81 @@ func isValidURL(input string) bool {
 	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
 }
 
-func generateUniqueShortID(ctx context.Context, tx *sql.Tx) (string, error) {
-	for {
-		shortID := generateShortID()
-
-		var exists bool
-		query := `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`
-		err := tx.QueryRowContext(ctx, query, shortID).Scan(&exists)
-		if err != nil {
-			return "", err
-		}
-		if !exists {
-			return shortID, nil
-		}
-	}
+type CreateLinkHandler struct {
+	db *sql.DB
 }
 
-func GetShortID(ctx context.Context, tx *sql.Tx, href string) (string, error) {
+func InTransaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := f(tx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var input LinkInput
+	if err := json.Unmarshal(body, &input); err != nil {
+		msg := fmt.Sprintf("json.Unmarshal: %s", err)
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
+		return
+	}
+
+	if !isValidURL(input.Href) {
+		msg := fmt.Sprintf("Invalid link: %s", input.Href)
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
+		return
+	}
+
+	var shortID string
+	err = InTransaction(ctx, h.db, func(tx *sql.Tx) error {
+		var err2 error
+		shortID, err2 = h.getShortID(ctx, tx, input.Href)
+		if err2 != nil {
+			return err2
+		}
+		return nil
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	output := LinkOutput{ShortLink: "/s/" + shortID}
+	WriteJson(ctx, w, http.StatusOK, output)
+}
+
+var Alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_")
+
+const shortIDLen = 11
+
+func (h *CreateLinkHandler) generateShortID() string {
+	b := make([]rune, 0, shortIDLen)
+
+	for i := 0; i < shortIDLen; i++ {
+		idx := rand.Intn(len(Alphabet))
+		b = append(b, Alphabet[idx])
+	}
+	return string(b)
+}
+
+func (h *CreateLinkHandler) getShortID(ctx context.Context, tx *sql.Tx, href string) (string, error) {
 	var shortID string
 	query := `
 		SELECT "short_id" FROM "links" WHERE "href" = $1
@@ -113,7 +157,7 @@ func GetShortID(ctx context.Context, tx *sql.Tx, href string) (string, error) {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return "", err
 		}
-		shortID, err = generateUniqueShortID(ctx, tx)
+		shortID, err = h.generateUniqueShortID(ctx, tx)
 		if err != nil {
 			return "", err
 		}
@@ -130,48 +174,19 @@ func GetShortID(ctx context.Context, tx *sql.Tx, href string) (string, error) {
 	return shortID, nil
 }
 
-func CreateLinkHandler(db *sql.DB) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		body, err := io.ReadAll(r.Body)
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, tx *sql.Tx) (string, error) {
+	for {
+		shortID := h.generateShortID()
+
+		var exists bool
+		query := `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`
+		err := tx.QueryRowContext(ctx, query, shortID).Scan(&exists)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return "", err
 		}
-
-		var input LinkInput
-		if err = json.Unmarshal(body, &input); err != nil {
-			msg := fmt.Sprintf("json.Unmarshal: %s", err)
-			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
-			return
+		if !exists {
+			return shortID, nil
 		}
-
-		if !isValidURL(input.Href) {
-			msg := fmt.Sprintf("Invalid link: %s", input.Href)
-			WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
-			return
-		}
-
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		defer tx.Rollback()
-
-		shortID, err := GetShortID(ctx, tx, input.Href)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		if err = tx.Commit(); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		output := LinkOutput{ShortLink: "/s/" + shortID}
-		WriteJson(ctx, w, http.StatusOK, output)
 	}
 }
 
@@ -225,7 +240,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /ping", PingHandler(db))
-	mux.HandleFunc("POST /new", CreateLinkHandler(db))
+	mux.Handle("POST /new", &CreateLinkHandler{db: db})
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
