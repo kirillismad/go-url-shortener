@@ -1,4 +1,4 @@
-FROM golang:1.22 AS builder
+FROM golang:1.22.3-bookworm AS builder
 
 ARG BUILD_DIR=/build
 ARG FILENAME=main
@@ -13,7 +13,7 @@ COPY . .
 
 RUN go build -o ${FILENAME} .
 
-FROM debian:latest
+FROM debian:bookworm
 
 ARG BUILD_DIR=/build
 ARG APP_DIR=/app
@@ -24,7 +24,6 @@ WORKDIR ${APP_DIR}
 
 COPY --from=builder ${BUILD_DIR}/${FILENAME} .
 
-# ADD USER
 RUN adduser --system --no-create-home --home ${APP_DIR} --disabled-login ${APP_USER}
 
 RUN chown ${APP_USER} ${FILENAME} && chmod +x ${FILENAME}

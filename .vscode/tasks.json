@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "runDb",
+            "type": "shell",
+            "command": "docker run --name url_shortener_db --rm -p 5432:5432 -e POSTGRES_PASSWORD=dbpassword -e POSTGRES_USER=dbuser -e POSTGRES_DB=dbname postgres:16",
+            "group": "none",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "clear": false,
+                "close": true
+            }
+        },
+    ]
+}
