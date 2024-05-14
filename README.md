@@ -26,3 +26,7 @@ use-case
 ## down migration
 
 `migrate -database pgx5://dbuser:dbpassword@localhost:5432/dbname?sslmode=disable -path ./migrations down`
+
+## docker-comopose up
+
+`docker-compose --env-file ./envs/docker.env up --build --remove-orphans`

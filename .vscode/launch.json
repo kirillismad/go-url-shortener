@@ -12,7 +12,7 @@
             "internalConsoleOptions": "openOnSessionStart",
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/main.go",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/envs/local.env"
         }
     ]
 }
