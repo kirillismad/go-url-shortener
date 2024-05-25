@@ -19,85 +19,11 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/sethvargo/go-envconfig"
+
+	common_http "github.com/kirillismad/go-url-shortener/internal/common/http"
+	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
+	sqlx "github.com/kirillismad/go-url-shortener/pkg/sql"
 )
-
-type J map[string]interface{}
-
-func WriteJson(ctx context.Context, w http.ResponseWriter, status int, content any) {
-	b, err := json.Marshal(content)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("content-type", "application/json")
-	w.WriteHeader(status)
-	w.Write(b)
-}
-
-type TxOption func(*sql.TxOptions)
-
-func WithIsolationLevel(level sql.IsolationLevel) TxOption {
-	return func(opt *sql.TxOptions) {
-		opt.Isolation = level
-	}
-}
-
-func WithReadOnly(value bool) TxOption {
-	return func(opt *sql.TxOptions) {
-		opt.ReadOnly = value
-	}
-}
-
-func InTransaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error, opts ...TxOption) error {
-	var txOptions *sql.TxOptions
-	if len(opts) != 0 {
-		txOptions = &sql.TxOptions{}
-		for _, o := range opts {
-			o(txOptions)
-		}
-	}
-
-	tx, err := db.BeginTx(ctx, txOptions)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if err := f(tx); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
-}
-
-type PingHandler struct {
-	db *sql.DB
-}
-
-func (h *PingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	err := h.db.PingContext(ctx)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	content := J{"msg": "pong"}
-	WriteJson(ctx, w, http.StatusOK, content)
-}
-
-type Link struct {
-	ID         int64
-	ShortID    string
-	Href       string
-	CreatedAt  time.Time
-	UsageCount int64
-	UsageAt    time.Time
-}
 
 type LinkInput struct {
 	Href string `json:"href"`
@@ -105,15 +31,6 @@ type LinkInput struct {
 
 type LinkOutput struct {
 	ShortLink string `json:"shortLink"`
-}
-
-func isValidURL(input string) bool {
-	u, err := url.Parse(input)
-	if err != nil {
-		return false
-	}
-
-	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
 }
 
 type CreateLinkHandler struct {
@@ -131,18 +48,18 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var input LinkInput
 	if err := json.Unmarshal(body, &input); err != nil {
 		msg := fmt.Sprintf("json.Unmarshal: %s", err)
-		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
+		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
 		return
 	}
 
-	if !isValidURL(input.Href) {
+	if !h.isValidURL(input.Href) {
 		msg := fmt.Sprintf("Invalid link: %s", input.Href)
-		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": msg})
+		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
 		return
 	}
 
 	var shortID string
-	err = InTransaction(ctx, h.db, func(tx *sql.Tx) error {
+	err = sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
 		var txErr error
 		shortID, txErr = h.getShortID(ctx, tx, input.Href)
 		if txErr != nil {
@@ -156,7 +73,16 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	output := LinkOutput{ShortLink: "/s/" + shortID}
-	WriteJson(ctx, w, http.StatusCreated, output)
+	httpx.WriteJson(ctx, w, http.StatusCreated, output)
+}
+
+func (_ *CreateLinkHandler) isValidURL(input string) bool {
+	u, err := url.Parse(input)
+	if err != nil {
+		return false
+	}
+
+	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
 }
 
 var Alphabet = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_")
@@ -183,18 +109,18 @@ func (h *CreateLinkHandler) getShortID(ctx context.Context, tx *sql.Tx, href str
 		if !errors.Is(err, sql.ErrNoRows) {
 			return "", err
 		}
-		shortID, err = h.generateUniqueShortID(ctx, tx)
-		if err != nil {
-			return "", err
+		shortID, err2 := h.generateUniqueShortID(ctx, tx)
+		if err2 != nil {
+			return "", err2
 		}
 
 		query2 := `
 			INSERT INTO "links" ("short_id", "href") 
 			VALUES ($1, $2)
 		`
-		_, err = tx.ExecContext(ctx, query2, shortID, href)
-		if err != nil {
-			return "", err
+		_, err2 = tx.ExecContext(ctx, query2, shortID, href)
+		if err2 != nil {
+			return "", err2
 		}
 	}
 	return shortID, nil
@@ -226,22 +152,37 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pattern := regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`)
 	if !pattern.MatchString(short_id) {
-		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": "Invalid link format"})
+		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": "Invalid link format"})
 		return
 	}
 
-	query := `
-		SELECT href FROM links WHERE short_id = $1
-	`
 	var href string
-	err := h.db.QueryRowContext(ctx, query, short_id).Scan(&href)
+	err := sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
+		query := `
+			SELECT "id", "href" FROM "links" WHERE "short_id" = $1
+		`
+		var id int
+		txErr := tx.QueryRowContext(ctx, query, short_id).Scan(&id, &href)
+		if txErr != nil {
+			return txErr
+		}
+
+		query = `
+			UPDATE "links" SET "usage_count" = "usage_count" + 1, "usage_at" = NOW()
+			WHERE "id" = $1
+		`
+		_, txErr = h.db.ExecContext(ctx, query, id)
+		if txErr != nil {
+			return txErr
+		}
+		return nil
+	})
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusNotFound)
-		WriteJson(ctx, w, http.StatusNotFound, J{"msg": "Page not found"})
+		httpx.WriteJson(ctx, w, http.StatusNotFound, httpx.J{"msg": "Page not found"})
 		return
 	}
 
@@ -298,7 +239,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /ping", &PingHandler{db: db})
+	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
 	mux.Handle("POST /new", &CreateLinkHandler{db: db})
 	mux.Handle("GET /s/{short_id}", &RedirectHandler{db: db})
 

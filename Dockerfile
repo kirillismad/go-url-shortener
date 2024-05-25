@@ -11,7 +11,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o ${FILENAME} .
+RUN go build -o ${FILENAME} ./cmd/main.go
 
 FROM debian:bookworm
 
