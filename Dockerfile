@@ -22,7 +22,8 @@ ARG FILENAME=main
 
 WORKDIR ${APP_DIR}
 
-COPY --from=builder ${BUILD_DIR}/${FILENAME} .
+COPY --from=builder ${BUILD_DIR}/${FILENAME} . 
+COPY --from=builder ${BUILD_DIR}/config ./config
 
 RUN adduser --system --no-create-home --home ${APP_DIR} --disabled-login ${APP_USER}
 

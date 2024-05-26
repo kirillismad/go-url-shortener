@@ -43,5 +43,5 @@ m.force:
 	migrate -database $(DB_URL) -path $(MIGRATIONS_DIR) force $$version
 
 build: $(EXECUTABLE_PATH)
-	go build -C ${MAIN_PATH} -o ${EXECUTABLE_PATH} .
+	go build -o ${EXECUTABLE_PATH} ./cmd/main.go
 

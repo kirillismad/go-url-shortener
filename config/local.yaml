@@ -1,0 +1,9 @@
+server:
+  host: localhost
+  port: 8000
+  read_timeout: 0s
+  write_timeout: 0s
+  idle_timeout: 0s
+  shutdown_timeout: 10s
+db:
+  sslmode: disable
