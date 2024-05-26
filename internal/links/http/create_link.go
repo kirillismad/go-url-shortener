@@ -13,6 +13,7 @@ import (
 
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 	sqlx "github.com/kirillismad/go-url-shortener/pkg/sql"
+	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
 type CreateLinkInput struct {
@@ -24,7 +25,8 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *sqlc.Queries
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
@@ -33,6 +35,7 @@ func NewCreateLinkHandler() *CreateLinkHandler {
 
 func (h *CreateLinkHandler) WithDB(db *sql.DB) *CreateLinkHandler {
 	h.db = db
+	h.queries = sqlc.New(db)
 	return h
 }
 
@@ -41,6 +44,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, err.Error())
 		return
 	}
 
@@ -60,14 +64,15 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var shortID string
 	err = sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
 		var txErr error
-		shortID, txErr = h.getShortID(ctx, tx, input.Href)
+		shortID, txErr = h.getShortID(ctx, h.queries.WithTx(tx), input.Href)
 		if txErr != nil {
-			return txErr
+			return fmt.Errorf("h.getShortID: %w", txErr)
 		}
 		return nil
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, err.Error())
 		return
 	}
 
@@ -101,42 +106,33 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) getShortID(ctx context.Context, tx *sql.Tx, href string) (string, error) {
-	var shortID string
-	query := `
-		SELECT "short_id" FROM "links" WHERE "href" = $1
-	`
-	err := tx.QueryRowContext(ctx, query, href).Scan(&shortID)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return "", err
-		}
-		shortID, err2 := h.generateUniqueShortID(ctx, tx)
-		if err2 != nil {
-			return "", err2
-		}
-
-		query2 := `
-			INSERT INTO "links" ("short_id", "href") 
-			VALUES ($1, $2)
-		`
-		_, err2 = tx.ExecContext(ctx, query2, shortID, href)
-		if err2 != nil {
-			return "", err2
-		}
+func (h *CreateLinkHandler) getShortID(ctx context.Context, qtx *sqlc.Queries, href string) (string, error) {
+	link, err := qtx.GetLinkByHref(ctx, href)
+	if err == nil {
+		return link.ShortID, nil
 	}
-	return shortID, nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("qtx.GetLinkByHref: %w", err)
+	}
+
+	shortID, err := h.generateUniqueShortID(ctx, qtx)
+	if err != nil {
+		return "", fmt.Errorf("h.generateUniqueShortID: %w", err)
+	}
+
+	link, err = qtx.CreateLink(ctx, sqlc.CreateLinkParams{ShortID: shortID, Href: href})
+	if err != nil {
+		return "", fmt.Errorf("qtx.CreateLink: %w", err)
+	}
+	return link.ShortID, nil
 }
 
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, tx *sql.Tx) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, qtx *sqlc.Queries) (string, error) {
 	for {
 		shortID := h.generateShortID()
-
-		var exists bool
-		query := `SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)`
-		err := tx.QueryRowContext(ctx, query, shortID).Scan(&exists)
+		exists, err := qtx.IsLinkExistByShortID(ctx, shortID)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("qtx.IsLinkExistByShortID: %w", err)
 		}
 		if !exists {
 			return shortID, nil

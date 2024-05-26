@@ -65,7 +65,7 @@ func main() {
 	connString := url.URL{
 		Scheme:   "postgres",
 		User:     url.UserPassword(cfg.DB.User, cfg.DB.Password),
-		Host:     cfg.DB.Host,
+		Host:     fmt.Sprintf("%s:%d", cfg.DB.Host, cfg.DB.Port),
 		Path:     cfg.DB.Name,
 		RawQuery: v.Encode(),
 	}
