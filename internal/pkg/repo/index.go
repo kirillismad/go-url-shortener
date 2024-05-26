@@ -7,26 +7,26 @@ import (
 	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
-type LinkRepository struct {
+type Repository struct {
 	db *sql.DB
 	q  *sqlc.Queries
 }
 
-func NewRepository(db *sql.DB) *LinkRepository {
-	r := new(LinkRepository)
+func NewRepository(db *sql.DB) *Repository {
+	r := new(Repository)
 	r.db = db
 	r.q = sqlc.New(db)
 	return r
 }
 
-func (r *LinkRepository) InTransaction(ctx context.Context, work func(*LinkRepository) error) error {
+func (r *Repository) InTransaction(ctx context.Context, work func(*Repository) error) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	txRepo := &LinkRepository{
+	txRepo := &Repository{
 		db: r.db,
 		q:  r.q.WithTx(tx),
 	}

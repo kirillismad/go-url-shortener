@@ -25,8 +25,7 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	db      *sql.DB
-	queries *sqlc.Queries
+	db *sql.DB
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
@@ -35,7 +34,6 @@ func NewCreateLinkHandler() *CreateLinkHandler {
 
 func (h *CreateLinkHandler) WithDB(db *sql.DB) *CreateLinkHandler {
 	h.db = db
-	h.queries = sqlc.New(db)
 	return h
 }
 
@@ -64,7 +62,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var shortID string
 	err = sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
 		var txErr error
-		shortID, txErr = h.getShortID(ctx, h.queries.WithTx(tx), input.Href)
+		shortID, txErr = h.getShortID(ctx, sqlc.New(tx), input.Href)
 		if txErr != nil {
 			return fmt.Errorf("h.getShortID: %w", txErr)
 		}
@@ -106,8 +104,8 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) getShortID(ctx context.Context, qtx *sqlc.Queries, href string) (string, error) {
-	link, err := qtx.GetLinkByHref(ctx, href)
+func (h *CreateLinkHandler) getShortID(ctx context.Context, q *sqlc.Queries, href string) (string, error) {
+	link, err := q.GetLinkByHref(ctx, href)
 	if err == nil {
 		return link.ShortID, nil
 	}
@@ -115,22 +113,22 @@ func (h *CreateLinkHandler) getShortID(ctx context.Context, qtx *sqlc.Queries, h
 		return "", fmt.Errorf("qtx.GetLinkByHref: %w", err)
 	}
 
-	shortID, err := h.generateUniqueShortID(ctx, qtx)
+	shortID, err := h.generateUniqueShortID(ctx, q)
 	if err != nil {
 		return "", fmt.Errorf("h.generateUniqueShortID: %w", err)
 	}
 
-	link, err = qtx.CreateLink(ctx, sqlc.CreateLinkParams{ShortID: shortID, Href: href})
+	link, err = q.CreateLink(ctx, sqlc.CreateLinkParams{ShortID: shortID, Href: href})
 	if err != nil {
 		return "", fmt.Errorf("qtx.CreateLink: %w", err)
 	}
 	return link.ShortID, nil
 }
 
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, qtx *sqlc.Queries) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, q *sqlc.Queries) (string, error) {
 	for {
 		shortID := h.generateShortID()
-		exists, err := qtx.IsLinkExistByShortID(ctx, shortID)
+		exists, err := q.IsLinkExistByShortID(ctx, shortID)
 		if err != nil {
 			return "", fmt.Errorf("qtx.IsLinkExistByShortID: %w", err)
 		}

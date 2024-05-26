@@ -17,8 +17,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	common_http "github.com/kirillismad/go-url-shortener/internal/common/http"
-	links_http "github.com/kirillismad/go-url-shortener/internal/links/http"
+	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
+	links_http "github.com/kirillismad/go-url-shortener/internal/apps/links/http"
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
 
