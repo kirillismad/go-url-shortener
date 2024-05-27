@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
-	sqlx "github.com/kirillismad/go-url-shortener/pkg/sql"
-	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
 type CreateLinkInput struct {
@@ -25,15 +25,15 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	db *sql.DB
+	repoFactory *repo.RepoFactory
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
 	return new(CreateLinkHandler)
 }
 
-func (h *CreateLinkHandler) WithDB(db *sql.DB) *CreateLinkHandler {
-	h.db = db
+func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *CreateLinkHandler {
+	h.repoFactory = repoFactory
 	return h
 }
 
@@ -59,14 +59,27 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var shortID string
-	err = sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
+	var link entity.Link
+	err = h.repoFactory.InTransaction(ctx, func(r *repo.Repository) error {
 		var txErr error
-		shortID, txErr = h.getShortID(ctx, sqlc.New(tx), input.Href)
-		if txErr != nil {
-			return fmt.Errorf("h.getShortID: %w", txErr)
+		link, txErr = r.GetLinkByHref(ctx, input.Href)
+		if txErr == nil {
+			return nil
 		}
-		return nil
+		if !errors.Is(txErr, sql.ErrNoRows) {
+			return fmt.Errorf("r.GetLinkByHref: %w", err)
+		}
+
+		shortID, txErr := h.generateUniqueShortID(ctx, r)
+		if txErr != nil {
+			return fmt.Errorf("h.generateUniqueShortID: %w", err)
+		}
+
+		link, txErr = r.CreateLink(ctx, shortID, input.Href)
+		if txErr != nil {
+			return fmt.Errorf("r.CreateLink: %w", err)
+		}
+		return txErr
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -74,7 +87,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output := CreateLinkOutput{ShortLink: "/s/" + shortID}
+	output := CreateLinkOutput{ShortLink: "/s/" + link.ShortID}
 	httpx.WriteJson(ctx, w, http.StatusCreated, output)
 }
 
@@ -104,31 +117,10 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) getShortID(ctx context.Context, q *sqlc.Queries, href string) (string, error) {
-	link, err := q.GetLinkByHref(ctx, href)
-	if err == nil {
-		return link.ShortID, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("qtx.GetLinkByHref: %w", err)
-	}
-
-	shortID, err := h.generateUniqueShortID(ctx, q)
-	if err != nil {
-		return "", fmt.Errorf("h.generateUniqueShortID: %w", err)
-	}
-
-	link, err = q.CreateLink(ctx, sqlc.CreateLinkParams{ShortID: shortID, Href: href})
-	if err != nil {
-		return "", fmt.Errorf("qtx.CreateLink: %w", err)
-	}
-	return link.ShortID, nil
-}
-
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, q *sqlc.Queries) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo *repo.Repository) (string, error) {
 	for {
 		shortID := h.generateShortID()
-		exists, err := q.IsLinkExistByShortID(ctx, shortID)
+		exists, err := repo.IsLinkExistByShortID(ctx, shortID)
 		if err != nil {
 			return "", fmt.Errorf("qtx.IsLinkExistByShortID: %w", err)
 		}

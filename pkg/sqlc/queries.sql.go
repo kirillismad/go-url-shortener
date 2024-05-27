@@ -52,6 +52,24 @@ func (q *Queries) GetLinkByHref(ctx context.Context, href string) (Link, error) 
 	return i, err
 }
 
+const getLinkByShortID = `-- name: GetLinkByShortID :one
+SELECT id, short_id, href, created_at, usage_count, usage_at FROM "links" WHERE "short_id" = $1
+`
+
+func (q *Queries) GetLinkByShortID(ctx context.Context, shortID string) (Link, error) {
+	row := q.db.QueryRowContext(ctx, getLinkByShortID, shortID)
+	var i Link
+	err := row.Scan(
+		&i.ID,
+		&i.ShortID,
+		&i.Href,
+		&i.CreatedAt,
+		&i.UsageCount,
+		&i.UsageAt,
+	)
+	return i, err
+}
+
 const isLinkExistByShortID = `-- name: IsLinkExistByShortID :one
 SELECT EXISTS(SELECT 1 FROM "links" WHERE "short_id" = $1)
 `
@@ -61,4 +79,15 @@ func (q *Queries) IsLinkExistByShortID(ctx context.Context, shortID string) (boo
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const updateLinkUsageInfo = `-- name: UpdateLinkUsageInfo :exec
+UPDATE "links" 
+SET "usage_count" = "usage_count" + 1, "usage_at" = NOW()
+WHERE "id" = $1
+`
+
+func (q *Queries) UpdateLinkUsageInfo(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, updateLinkUsageInfo, id)
+	return err
 }

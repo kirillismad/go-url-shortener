@@ -6,20 +6,21 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
-	sqlx "github.com/kirillismad/go-url-shortener/pkg/sql"
 )
 
 type RedirectHandler struct {
-	db *sql.DB
+	repoFactory *repo.RepoFactory
 }
 
 func NewRedirectHandler() *RedirectHandler {
 	return new(RedirectHandler)
 }
 
-func (h *RedirectHandler) WithDB(db *sql.DB) *RedirectHandler {
-	h.db = db
+func (h *RedirectHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *RedirectHandler {
+	h.repoFactory = repoFactory
 	return h
 }
 
@@ -33,22 +34,15 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var href string
-	err := sqlx.InTransaction(ctx, h.db, func(tx *sql.Tx) error {
-		query := `
-			SELECT "id", "href" FROM "links" WHERE "short_id" = $1
-		`
-		var id int
-		txErr := tx.QueryRowContext(ctx, query, short_id).Scan(&id, &href)
+	var link entity.Link
+	err := h.repoFactory.InTransaction(ctx, func(r *repo.Repository) error {
+		var txErr error
+		link, txErr = r.GetLinkByShortID(ctx, short_id)
 		if txErr != nil {
 			return txErr
 		}
 
-		query = `
-			UPDATE "links" SET "usage_count" = "usage_count" + 1, "usage_at" = NOW()
-			WHERE "id" = $1
-		`
-		_, txErr = h.db.ExecContext(ctx, query, id)
+		txErr = r.UpdateLinkUsageInfo(ctx, link.ID)
 		if txErr != nil {
 			return txErr
 		}
@@ -63,6 +57,6 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("location", href)
+	w.Header().Set("location", link.Href)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
