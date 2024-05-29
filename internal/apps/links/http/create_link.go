@@ -9,15 +9,15 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"net/url"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
 type CreateLinkInput struct {
-	Href string `json:"href"`
+	Href string `json:"href" validate:"http_url"`
 }
 
 type CreateLinkOutput struct {
@@ -26,6 +26,7 @@ type CreateLinkOutput struct {
 
 type CreateLinkHandler struct {
 	repoFactory *repo.RepoFactory
+	validator   *validator.Validate
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
@@ -34,6 +35,10 @@ func NewCreateLinkHandler() *CreateLinkHandler {
 
 func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *CreateLinkHandler {
 	h.repoFactory = repoFactory
+	return h
+}
+func (h *CreateLinkHandler) WithValidator(validator *validator.Validate) *CreateLinkHandler {
+	h.validator = validator
 	return h
 }
 
@@ -53,7 +58,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.isValidURL(input.Href) {
+	if err := h.validator.StructCtx(ctx, &input); err != nil {
 		msg := fmt.Sprintf("Invalid link: %s", input.Href)
 		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
 		return
@@ -75,7 +80,10 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("h.generateUniqueShortID: %w", err)
 		}
 
-		link, txErr = r.CreateLink(ctx, shortID, input.Href)
+		link, txErr = r.CreateLink(ctx, repo.CreateLinkArgs{
+			ShortID: shortID,
+			Href:    input.Href,
+		})
 		if txErr != nil {
 			return fmt.Errorf("r.CreateLink: %w", err)
 		}
@@ -91,28 +99,18 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJson(ctx, w, http.StatusCreated, output)
 }
 
-func (*CreateLinkHandler) isValidURL(input string) bool {
-	u, err := url.Parse(input)
-	if err != nil {
-		return false
-	}
-
-	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
-}
-
 func (h *CreateLinkHandler) generateShortID() string {
 	const (
 		shortIDLen = 11
 		alphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_"
 	)
 
-	Alphabet := []rune(alphabet)
+	xAlphabet := []rune(alphabet)
 
 	b := make([]rune, 0, shortIDLen)
-
 	for i := 0; i < shortIDLen; i++ {
-		idx := rand.Intn(len(Alphabet))
-		b = append(b, Alphabet[idx])
+		idx := rand.Intn(len(xAlphabet))
+		b = append(b, xAlphabet[idx])
 	}
 	return string(b)
 }
@@ -122,7 +120,7 @@ func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo *rep
 		shortID := h.generateShortID()
 		exists, err := repo.IsLinkExistByShortID(ctx, shortID)
 		if err != nil {
-			return "", fmt.Errorf("qtx.IsLinkExistByShortID: %w", err)
+			return "", fmt.Errorf("repo.IsLinkExistByShortID: %w", err)
 		}
 		if !exists {
 			return shortID, nil

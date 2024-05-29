@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
@@ -81,10 +82,11 @@ func main() {
 		log.Fatalf("db.Ping: %v", err)
 	}
 
+	xValidator := validator.New(validator.WithRequiredStructEnabled())
 	repoFactory := repo.NewRepoFactory(db)
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
-	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory))
+	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory).WithValidator(xValidator))
 	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory))
 
 	server := &http.Server{
