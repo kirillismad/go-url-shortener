@@ -17,6 +17,7 @@ type CreateLinkArgs struct {
 	ShortID string
 	Href    string
 }
+
 type Repository interface {
 	GetLinkByHref(context.Context, string) (entity.Link, error)
 	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
