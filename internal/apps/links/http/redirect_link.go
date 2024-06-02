@@ -7,12 +7,11 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
 type RedirectHandler struct {
-	repoFactory *repo.RepoFactory
+	repoFactory RepoFactory
 	validator   *validator.Validate
 }
 
@@ -20,7 +19,7 @@ func NewRedirectHandler() *RedirectHandler {
 	return new(RedirectHandler)
 }
 
-func (h *RedirectHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *RedirectHandler {
+func (h *RedirectHandler) WithRepoFactory(repoFactory RepoFactory) *RedirectHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -41,7 +40,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err := h.repoFactory.InTransaction(ctx, func(r *repo.Repository) error {
+	err := h.repoFactory.InTransaction(ctx, func(r Repository) error {
 		var txErr error
 		link, txErr = r.GetLinkByShortID(ctx, short_id)
 		if txErr != nil {

@@ -4,24 +4,23 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/http"
 	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
-
-type TxFn func(*Repository) error
 
 type RepoFactory struct {
 	db *sql.DB
 }
 
-func NewRepoFactory(db *sql.DB) *RepoFactory {
+func NewRepoFactory(db *sql.DB) http.RepoFactory {
 	return &RepoFactory{db: db}
 }
 
-func (r *RepoFactory) GetRepo() *Repository {
+func (r *RepoFactory) GetRepo() http.Repository {
 	return &Repository{q: sqlc.New(r.db)}
 }
 
-func (r *RepoFactory) InTransaction(ctx context.Context, txFn TxFn) error {
+func (r *RepoFactory) InTransaction(ctx context.Context, txFn http.TxFn) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

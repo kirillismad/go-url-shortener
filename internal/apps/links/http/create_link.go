@@ -12,20 +12,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
-
-type TxFn func(CreateLinkRepository) error
-
-type CreateLinkArgs struct {
-	ShortID string
-	Href    string
-}
-type CreateLinkRepository interface {
-	GetLinkByHref(context.Context, string) (entity.Link, error)
-	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
-}
 
 type CreateLinkInput struct {
 	Href string `json:"href" validate:"http_url"`
@@ -36,7 +24,7 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	repoFactory *repo.RepoFactory
+	repoFactory RepoFactory
 	validator   *validator.Validate
 }
 
@@ -44,7 +32,7 @@ func NewCreateLinkHandler() *CreateLinkHandler {
 	return new(CreateLinkHandler)
 }
 
-func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *CreateLinkHandler {
+func (h *CreateLinkHandler) WithRepoFactory(repoFactory RepoFactory) *CreateLinkHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -78,7 +66,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err = h.repoFactory.InTransaction(ctx, func(r *repo.Repository) error {
+	err = h.repoFactory.InTransaction(ctx, func(r Repository) error {
 		var txErr error
 		link, txErr = r.GetLinkByHref(ctx, input.Href)
 		if txErr == nil {
@@ -93,7 +81,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("h.generateUniqueShortID: %w", err)
 		}
 
-		link, txErr = r.CreateLink(ctx, repo.CreateLinkArgs{
+		link, txErr = r.CreateLink(ctx, CreateLinkArgs{
 			ShortID: shortID,
 			Href:    input.Href,
 		})
@@ -128,7 +116,7 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo *repo.Repository) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo Repository) (string, error) {
 	for {
 		shortID := h.generateShortID()
 		exists, err := repo.IsLinkExistByShortID(ctx, shortID)
