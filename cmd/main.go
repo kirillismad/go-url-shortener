@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	validatorV10 "github.com/go-playground/validator/v10"
+	"github.com/go-playground/validator/v10"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
@@ -25,16 +25,10 @@ import (
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
 
-var ShortIDPattern = regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`)
+func GetValidator(_ context.Context) *validator.Validate {
+	v := validator.New(validator.WithRequiredStructEnabled())
 
-func ValidateShortID(fl validatorV10.FieldLevel) bool {
-	return ShortIDPattern.MatchString(fl.Field().String())
-}
-
-func GetValidator(_ context.Context) *validatorV10.Validate {
-	v := validatorV10.New(validatorV10.WithRequiredStructEnabled())
-
-	v.RegisterValidation("short_id", func(fl validatorV10.FieldLevel) bool {
+	v.RegisterValidation("short_id", func(fl validator.FieldLevel) bool {
 		return regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`).MatchString(fl.Field().String())
 	})
 

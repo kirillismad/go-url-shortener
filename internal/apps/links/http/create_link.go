@@ -16,6 +16,17 @@ import (
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
+type TxFn func(CreateLinkRepository) error
+
+type CreateLinkArgs struct {
+	ShortID string
+	Href    string
+}
+type CreateLinkRepository interface {
+	GetLinkByHref(context.Context, string) (entity.Link, error)
+	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
+}
+
 type CreateLinkInput struct {
 	Href string `json:"href" validate:"http_url"`
 }
@@ -45,6 +56,7 @@ func (h *CreateLinkHandler) WithValidator(validator *validator.Validate) *Create
 
 func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
