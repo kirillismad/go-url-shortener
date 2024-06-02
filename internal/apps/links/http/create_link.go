@@ -37,6 +37,7 @@ func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *Crea
 	h.repoFactory = repoFactory
 	return h
 }
+
 func (h *CreateLinkHandler) WithValidator(validator *validator.Validate) *CreateLinkHandler {
 	h.validator = validator
 	return h

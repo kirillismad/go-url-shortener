@@ -13,10 +13,7 @@ import (
 var validate = validator.New(validator.WithRequiredStructEnabled())
 
 func GetConfig[T any](ctx context.Context, path string) (T, error) {
-	var (
-		config T
-		zero   T
-	)
+	var zero, config T
 
 	b, err := os.ReadFile(path)
 	if err != nil {

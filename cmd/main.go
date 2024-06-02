@@ -12,10 +12,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"syscall"
 	"time"
 
-	"github.com/go-playground/validator/v10"
+	validatorV10 "github.com/go-playground/validator/v10"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
@@ -23,6 +24,22 @@ import (
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
+
+var ShortIDPattern = regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`)
+
+func ValidateShortID(fl validatorV10.FieldLevel) bool {
+	return ShortIDPattern.MatchString(fl.Field().String())
+}
+
+func GetValidator(_ context.Context) *validatorV10.Validate {
+	v := validatorV10.New(validatorV10.WithRequiredStructEnabled())
+
+	v.RegisterValidation("short_id", func(fl validatorV10.FieldLevel) bool {
+		return regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`).MatchString(fl.Field().String())
+	})
+
+	return v
+}
 
 type Config struct {
 	Server struct {
@@ -82,12 +99,14 @@ func main() {
 		log.Fatalf("db.Ping: %v", err)
 	}
 
-	xValidator := validator.New(validator.WithRequiredStructEnabled())
+	// deps
+	validator := GetValidator(ctx)
 	repoFactory := repo.NewRepoFactory(db)
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
-	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory).WithValidator(xValidator))
-	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory))
+	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory).WithValidator(validator))
+	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory).WithValidator(validator))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
@@ -104,7 +123,6 @@ func main() {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP server error: %v", err)
 		}
-
 		log.Println("Server stops serving new connections")
 	}()
 

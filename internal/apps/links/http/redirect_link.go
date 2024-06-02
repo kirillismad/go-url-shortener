@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"regexp"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
@@ -13,6 +13,7 @@ import (
 
 type RedirectHandler struct {
 	repoFactory *repo.RepoFactory
+	validator   *validator.Validate
 }
 
 func NewRedirectHandler() *RedirectHandler {
@@ -24,12 +25,17 @@ func (h *RedirectHandler) WithRepoFactory(repoFactory *repo.RepoFactory) *Redire
 	return h
 }
 
+func (h *RedirectHandler) WithValidator(validator *validator.Validate) *RedirectHandler {
+	h.validator = validator
+	return h
+}
+
 func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	short_id := r.PathValue("short_id")
 
-	pattern := regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`)
-	if !pattern.MatchString(short_id) {
+	if err := h.validator.Var(short_id, "short_id"); err != nil {
 		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": "Invalid link format"})
 		return
 	}
