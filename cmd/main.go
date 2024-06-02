@@ -12,11 +12,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
+
 	"syscall"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
@@ -24,16 +23,6 @@ import (
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
-
-func GetValidator(_ context.Context) *validator.Validate {
-	v := validator.New(validator.WithRequiredStructEnabled())
-
-	v.RegisterValidation("short_id", func(fl validator.FieldLevel) bool {
-		return regexp.MustCompile(`^[a-zA-Z0-9\-_]{11}$`).MatchString(fl.Field().String())
-	})
-
-	return v
-}
 
 type Config struct {
 	Server struct {
@@ -94,13 +83,12 @@ func main() {
 	}
 
 	// deps
-	validator := GetValidator(ctx)
 	repoFactory := repo.NewRepoFactory(db)
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
-	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory).WithValidator(validator))
-	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory).WithValidator(validator))
+	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory))
+	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),

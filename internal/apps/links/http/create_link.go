@@ -10,8 +10,8 @@ import (
 	"math/rand"
 	"net/http"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
@@ -25,7 +25,6 @@ type CreateLinkOutput struct {
 
 type CreateLinkHandler struct {
 	repoFactory RepoFactory
-	validator   *validator.Validate
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
@@ -34,11 +33,6 @@ func NewCreateLinkHandler() *CreateLinkHandler {
 
 func (h *CreateLinkHandler) WithRepoFactory(repoFactory RepoFactory) *CreateLinkHandler {
 	h.repoFactory = repoFactory
-	return h
-}
-
-func (h *CreateLinkHandler) WithValidator(validator *validator.Validate) *CreateLinkHandler {
-	h.validator = validator
 	return h
 }
 
@@ -59,7 +53,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.validator.StructCtx(ctx, &input); err != nil {
+	if err := validator.StructCtx(ctx, &input); err != nil {
 		msg := fmt.Sprintf("Invalid link: %s", input.Href)
 		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
 		return
@@ -106,12 +100,12 @@ func (h *CreateLinkHandler) generateShortID() string {
 		alphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_"
 	)
 
-	xAlphabet := []rune(alphabet)
+	alph := []rune(alphabet)
 
 	b := make([]rune, 0, shortIDLen)
 	for i := 0; i < shortIDLen; i++ {
-		idx := rand.Intn(len(xAlphabet))
-		b = append(b, xAlphabet[idx])
+		idx := rand.Intn(len(alph))
+		b = append(b, alph[idx])
 	}
 	return string(b)
 }
