@@ -6,7 +6,7 @@ import (
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
 )
 
-func (r *Repository) GetLinkByShortID(ctx context.Context, shortID string) (entity.Link, error) {
+func (r *Repo) GetLinkByShortID(ctx context.Context, shortID string) (entity.Link, error) {
 	l, err := r.q.GetLinkByShortID(ctx, shortID)
 	if err != nil {
 		return entity.Link{}, err

@@ -16,6 +16,11 @@ import (
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
+type CreateLinkArgs struct {
+	ShortID string
+	Href    string
+}
+
 type ICreateLinkRepo interface {
 	GetLinkByHref(context.Context, string) (entity.Link, error)
 	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
@@ -49,7 +54,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, err.Error())
+		fmt.Fprintf(w, "io.ReadAll: %v\n", err)
 		return
 	}
 
@@ -93,7 +98,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, err.Error())
+		fmt.Fprintf(w, "h.repoFactory.InTransaction: %v\n", err)
 		return
 	}
 

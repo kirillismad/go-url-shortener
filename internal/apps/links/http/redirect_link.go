@@ -16,6 +16,7 @@ type IRedirectHandlerRepo interface {
 	GetLinkByShortID(context.Context, string) (entity.Link, error)
 	UpdateLinkUsageInfo(context.Context, int64) error
 }
+
 type RedirectHandler struct {
 	repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]
 }

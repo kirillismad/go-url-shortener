@@ -5,15 +5,15 @@ import (
 	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
-type Repository struct {
+type Repo struct {
 	q *sqlc.Queries
 }
 
-func newRepo(q *sqlc.Queries) *Repository {
-	return &Repository{q: q}
+func newRepo(q *sqlc.Queries) *Repo {
+	return &Repo{q: q}
 }
 
-func NewCreateLinkRepository(q *sqlc.Queries) http.ICreateLinkRepo {
+func NewCreateLinkRepo(q *sqlc.Queries) http.ICreateLinkRepo {
 	return newRepo(q)
 }
 

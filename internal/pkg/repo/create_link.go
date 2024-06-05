@@ -8,7 +8,7 @@ import (
 	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
-func (r *Repository) CreateLink(ctx context.Context, args http.CreateLinkArgs) (entity.Link, error) {
+func (r *Repo) CreateLink(ctx context.Context, args http.CreateLinkArgs) (entity.Link, error) {
 	p := sqlc.CreateLinkParams{
 		ShortID: args.ShortID,
 		Href:    args.Href,

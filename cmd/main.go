@@ -51,6 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("os.Getwd: %v", err)
 	}
+	log.Printf("Working directory: %s\n", workDir)
 
 	var configPath string
 	defaultConfigPath := filepath.Join(workDir, "config", "local.yaml")
@@ -62,6 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config.GetConfig: %v", err)
 	}
+	log.Printf("Configuration file: %s\n", configPath)
 
 	v := make(url.Values, 1)
 	v.Set("sslmode", cfg.DB.SSLMode)
@@ -87,7 +89,7 @@ func main() {
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
 	mux.Handle(
 		"POST /new",
-		links_http.NewCreateLinkHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewCreateLinkRepository)),
+		links_http.NewCreateLinkHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewCreateLinkRepo)),
 	)
 	mux.Handle(
 		"GET /s/{short_id}",
@@ -104,7 +106,6 @@ func main() {
 
 	go func() {
 		log.Printf("Server is starting\n")
-		log.Printf("Configuration file: %s\n", configPath)
 		err := server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP server error: %v", err)
