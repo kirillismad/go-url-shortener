@@ -11,9 +11,16 @@ import (
 	"net/http"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/repo_factory"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
+
+type ICreateLinkRepo interface {
+	GetLinkByHref(context.Context, string) (entity.Link, error)
+	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
+	IsLinkExistByShortID(context.Context, string) (bool, error)
+}
 
 type CreateLinkInput struct {
 	Href string `json:"href" validate:"http_url"`
@@ -24,14 +31,14 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	repoFactory RepoFactory
+	repoFactory *repo_factory.RepoFactory[ICreateLinkRepo]
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
 	return new(CreateLinkHandler)
 }
 
-func (h *CreateLinkHandler) WithRepoFactory(repoFactory RepoFactory) *CreateLinkHandler {
+func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[ICreateLinkRepo]) *CreateLinkHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -60,7 +67,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err = h.repoFactory.InTransaction(ctx, func(r Repository) error {
+	err = h.repoFactory.InTransaction(ctx, func(r ICreateLinkRepo) error {
 		var txErr error
 		link, txErr = r.GetLinkByHref(ctx, input.Href)
 		if txErr == nil {
@@ -110,7 +117,7 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo Repository) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo ICreateLinkRepo) (string, error) {
 	for {
 		shortID := h.generateShortID()
 		exists, err := repo.IsLinkExistByShortID(ctx, shortID)

@@ -21,6 +21,7 @@ import (
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
 	links_http "github.com/kirillismad/go-url-shortener/internal/apps/links/http"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/repo_factory"
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
 
@@ -82,13 +83,16 @@ func main() {
 		log.Fatalf("db.Ping: %v", err)
 	}
 
-	// deps
-	repoFactory := repo.NewRepoFactory(db)
-
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
-	mux.Handle("POST /new", links_http.NewCreateLinkHandler().WithRepoFactory(repoFactory))
-	mux.Handle("GET /s/{short_id}", links_http.NewRedirectHandler().WithRepoFactory(repoFactory))
+	mux.Handle(
+		"POST /new",
+		links_http.NewCreateLinkHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewCreateLinkRepository)),
+	)
+	mux.Handle(
+		"GET /s/{short_id}",
+		links_http.NewRedirectHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewRedirectHandlerRepo)),
+	)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),

@@ -1,24 +1,30 @@
 package http
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/repo_factory"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
+type IRedirectHandlerRepo interface {
+	GetLinkByShortID(context.Context, string) (entity.Link, error)
+	UpdateLinkUsageInfo(context.Context, int64) error
+}
 type RedirectHandler struct {
-	repoFactory RepoFactory
+	repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]
 }
 
 func NewRedirectHandler() *RedirectHandler {
 	return new(RedirectHandler)
 }
 
-func (h *RedirectHandler) WithRepoFactory(repoFactory RepoFactory) *RedirectHandler {
+func (h *RedirectHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]) *RedirectHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -34,7 +40,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err := h.repoFactory.InTransaction(ctx, func(r Repository) error {
+	err := h.repoFactory.InTransaction(ctx, func(r IRedirectHandlerRepo) error {
 		var txErr error
 		link, txErr = r.GetLinkByShortID(ctx, short_id)
 		if txErr != nil {
