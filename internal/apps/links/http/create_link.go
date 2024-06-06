@@ -3,10 +3,8 @@ package http
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 
@@ -51,17 +49,17 @@ func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactor
 func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	body, err := io.ReadAll(r.Body)
+	input, err := httpx.ReadJson[CreateLinkInput](ctx, r)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "io.ReadAll: %v\n", err)
-		return
-	}
-
-	var input CreateLinkInput
-	if err := json.Unmarshal(body, &input); err != nil {
-		msg := fmt.Sprintf("json.Unmarshal: %s", err)
-		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
+		switch {
+		case errors.Is(err, httpx.ErrReadBody):
+			w.WriteHeader(http.StatusBadRequest)
+		case errors.Is(err, httpx.ErrJsonUnmarshal):
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		fmt.Fprintln(w, err.Error())
 		return
 	}
 
@@ -98,12 +96,14 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "h.repoFactory.InTransaction: %v\n", err)
 		return
 	}
 
 	output := CreateLinkOutput{ShortLink: "/s/" + link.ShortID}
-	httpx.WriteJson(ctx, w, http.StatusCreated, output)
+	if err := httpx.WriteJson(ctx, w, http.StatusCreated, output); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *CreateLinkHandler) generateShortID() string {

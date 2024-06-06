@@ -22,12 +22,14 @@ func (h *PingHandler) WithDB(db *sql.DB) *PingHandler {
 
 func (h *PingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	err := h.db.PingContext(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	content := httpx.J{"msg": "pong"}
-	httpx.WriteJson(ctx, w, http.StatusOK, content)
+	if err := httpx.WriteJson(ctx, w, http.StatusOK, httpx.J{"msg": "pong"}); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
