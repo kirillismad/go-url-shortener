@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -11,11 +10,6 @@ import (
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
-
-type IRedirectHandlerRepo interface {
-	GetLinkByShortID(context.Context, string) (entity.Link, error)
-	UpdateLinkUsageInfo(context.Context, int64) error
-}
 
 type RedirectHandler struct {
 	repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]
@@ -35,6 +29,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	short_id := r.PathValue("short_id")
 
+	// usecase start
 	if err := validator.VarCtx(ctx, short_id, "short_id"); err != nil {
 		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": "Invalid link format"})
 		return
@@ -62,6 +57,8 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJson(ctx, w, http.StatusNotFound, httpx.J{"msg": "Page not found"})
 		return
 	}
+
+	// usecase end
 
 	w.Header().Set("location", link.Href)
 	w.WriteHeader(http.StatusTemporaryRedirect)

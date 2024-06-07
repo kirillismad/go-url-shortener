@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -13,17 +12,6 @@ import (
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
-
-type CreateLinkArgs struct {
-	ShortID string
-	Href    string
-}
-
-type ICreateLinkRepo interface {
-	GetLinkByHref(context.Context, string) (entity.Link, error)
-	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
-	IsLinkExistByShortID(context.Context, string) (bool, error)
-}
 
 type CreateLinkInput struct {
 	Href string `json:"href" validate:"http_url"`
@@ -51,18 +39,11 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	input, err := httpx.ReadJson[CreateLinkInput](ctx, r)
 	if err != nil {
-		switch {
-		case errors.Is(err, httpx.ErrReadBody):
-			w.WriteHeader(http.StatusBadRequest)
-		case errors.Is(err, httpx.ErrJsonUnmarshal):
-			w.WriteHeader(http.StatusBadRequest)
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		fmt.Fprintln(w, err.Error())
+		httpx.HandleError(ctx, w, err)
 		return
 	}
 
+	// usecase start
 	if err := validator.StructCtx(ctx, &input); err != nil {
 		msg := fmt.Sprintf("Invalid link: %s", input.Href)
 		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
@@ -76,7 +57,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if txErr == nil {
 			return nil
 		}
-		if !errors.Is(txErr, sql.ErrNoRows) {
+		if !errors.Is(txErr, ErrNoResult) {
 			return fmt.Errorf("r.GetLinkByHref: %w", err)
 		}
 
@@ -98,10 +79,11 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	// usecase end
 
 	output := CreateLinkOutput{ShortLink: "/s/" + link.ShortID}
 	if err := httpx.WriteJson(ctx, w, http.StatusCreated, output); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		httpx.HandleError(ctx, w, err)
 		return
 	}
 }
