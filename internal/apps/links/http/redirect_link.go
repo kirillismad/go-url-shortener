@@ -1,7 +1,6 @@
 package http
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 
@@ -50,7 +49,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, ErrNoResult) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
