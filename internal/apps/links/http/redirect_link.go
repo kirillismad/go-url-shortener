@@ -11,14 +11,14 @@ import (
 )
 
 type RedirectHandler struct {
-	repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]
+	repoFactory *repo_factory.RepoFactory[LinkRepo]
 }
 
 func NewRedirectHandler() *RedirectHandler {
 	return new(RedirectHandler)
 }
 
-func (h *RedirectHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[IRedirectHandlerRepo]) *RedirectHandler {
+func (h *RedirectHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[LinkRepo]) *RedirectHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -35,7 +35,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err := h.repoFactory.InTransaction(ctx, func(r IRedirectHandlerRepo) error {
+	err := h.repoFactory.InTransaction(ctx, func(r LinkRepo) error {
 		var txErr error
 		link, txErr = r.GetLinkByShortID(ctx, short_id)
 		if txErr != nil {

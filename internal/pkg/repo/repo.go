@@ -13,10 +13,6 @@ func newRepo(q *sqlc.Queries) *Repo {
 	return &Repo{q: q}
 }
 
-func NewCreateLinkRepo(q *sqlc.Queries) http.ICreateLinkRepo {
-	return newRepo(q)
-}
-
-func NewRedirectHandlerRepo(q *sqlc.Queries) http.IRedirectHandlerRepo {
+func NewLinkRepo(q *sqlc.Queries) http.LinkRepo {
 	return newRepo(q)
 }

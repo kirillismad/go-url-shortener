@@ -85,15 +85,17 @@ func main() {
 		log.Fatalf("db.Ping: %v", err)
 	}
 
+	linkRepoFactory := repo_factory.NewRepoFactory(db, repo.NewLinkRepo)
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
 	mux.Handle(
 		"POST /new",
-		links_http.NewCreateLinkHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewCreateLinkRepo)),
+		links_http.NewCreateLinkHandler().WithRepoFactory(linkRepoFactory),
 	)
 	mux.Handle(
 		"GET /s/{short_id}",
-		links_http.NewRedirectHandler().WithRepoFactory(repo_factory.NewRepoFactory(db, repo.NewRedirectHandlerRepo)),
+		links_http.NewRedirectHandler().WithRepoFactory(linkRepoFactory),
 	)
 
 	server := &http.Server{

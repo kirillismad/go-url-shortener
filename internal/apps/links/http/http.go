@@ -14,13 +14,10 @@ type CreateLinkArgs struct {
 	Href    string
 }
 
-type ICreateLinkRepo interface {
+type LinkRepo interface {
 	CreateLink(context.Context, CreateLinkArgs) (entity.Link, error)
 	GetLinkByHref(context.Context, string) (entity.Link, error)
 	IsLinkExistByShortID(context.Context, string) (bool, error)
-}
-
-type IRedirectHandlerRepo interface {
 	GetLinkByShortID(context.Context, string) (entity.Link, error)
 	UpdateLinkUsageInfo(context.Context, int64) error
 }

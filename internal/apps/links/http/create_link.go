@@ -22,14 +22,14 @@ type CreateLinkOutput struct {
 }
 
 type CreateLinkHandler struct {
-	repoFactory *repo_factory.RepoFactory[ICreateLinkRepo]
+	repoFactory *repo_factory.RepoFactory[LinkRepo]
 }
 
 func NewCreateLinkHandler() *CreateLinkHandler {
 	return new(CreateLinkHandler)
 }
 
-func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[ICreateLinkRepo]) *CreateLinkHandler {
+func (h *CreateLinkHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[LinkRepo]) *CreateLinkHandler {
 	h.repoFactory = repoFactory
 	return h
 }
@@ -51,7 +51,7 @@ func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var link entity.Link
-	err = h.repoFactory.InTransaction(ctx, func(r ICreateLinkRepo) error {
+	err = h.repoFactory.InTransaction(ctx, func(r LinkRepo) error {
 		var txErr error
 		link, txErr = r.GetLinkByHref(ctx, input.Href)
 		if txErr == nil {
@@ -104,7 +104,7 @@ func (h *CreateLinkHandler) generateShortID() string {
 	return string(b)
 }
 
-func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo ICreateLinkRepo) (string, error) {
+func (h *CreateLinkHandler) generateUniqueShortID(ctx context.Context, repo LinkRepo) (string, error) {
 	for {
 		shortID := h.generateShortID()
 		exists, err := repo.IsLinkExistByShortID(ctx, shortID)
