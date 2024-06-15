@@ -5,20 +5,19 @@ import (
 	"net/http"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/repo_factory"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
 type RedirectHandler struct {
-	repoFactory *repo_factory.RepoFactory[LinkRepo]
+	repoFactory LinkRepoFactory
 }
 
 func NewRedirectHandler() *RedirectHandler {
 	return new(RedirectHandler)
 }
 
-func (h *RedirectHandler) WithRepoFactory(repoFactory *repo_factory.RepoFactory[LinkRepo]) *RedirectHandler {
+func (h *RedirectHandler) WithRepoFactory(repoFactory LinkRepoFactory) *RedirectHandler {
 	h.repoFactory = repoFactory
 	return h
 }

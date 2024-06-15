@@ -9,6 +9,11 @@ import (
 
 var ErrNoResult = errors.New("no result error")
 
+type LinkRepoFactory interface {
+	GetRepo() LinkRepo
+	InTransaction(ctx context.Context, txFn func(r LinkRepo) error) error
+}
+
 type CreateLinkArgs struct {
 	ShortID string
 	Href    string
