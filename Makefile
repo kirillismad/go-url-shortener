@@ -45,3 +45,5 @@ m.force:
 build: $(EXECUTABLE_PATH)
 	go build -o ${EXECUTABLE_PATH} ./cmd/main.go
 
+sqlc.gen:
+	sqlc generate

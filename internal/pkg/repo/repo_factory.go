@@ -1,10 +1,10 @@
-package repo_factory
+package repo
 
 import (
 	"context"
 	"database/sql"
 
-	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/sqlc"
 )
 
 type NewRepoFn[R any] func(q *sqlc.Queries) R

@@ -5,7 +5,7 @@ import (
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
-	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/sqlc"
 )
 
 func (r *Repo) CreateLink(ctx context.Context, args usecase.CreateLinkArgs) (entity.Link, error) {

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
-	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
+	httpx "github.com/kirillismad/go-url-shortener/internal/pkg/http"
 )
 
 type CreateLinkInput struct {

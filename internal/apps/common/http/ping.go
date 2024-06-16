@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
-	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
+	httpx "github.com/kirillismad/go-url-shortener/internal/pkg/http"
 )
 
 type PingHandler struct {

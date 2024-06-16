@@ -2,7 +2,7 @@ package repo
 
 import (
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
-	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/sqlc"
 )
 
 type Repo struct {
