@@ -1,24 +1,19 @@
 package http
 
 import (
-	"errors"
 	"net/http"
 
-	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
 	httpx "github.com/kirillismad/go-url-shortener/pkg/http"
 )
 
 type RedirectHandler struct {
-	repoFactory LinkRepoFactory
+	usecase usecase.IGetLinkByShortIDHandler
 }
 
-func NewRedirectHandler() *RedirectHandler {
-	return new(RedirectHandler)
-}
-
-func (h *RedirectHandler) WithRepoFactory(repoFactory LinkRepoFactory) *RedirectHandler {
-	h.repoFactory = repoFactory
+func NewRedirectHandler(usecase usecase.IGetLinkByShortIDHandler) *RedirectHandler {
+	h := new(RedirectHandler)
+	h.usecase = usecase
 	return h
 }
 
@@ -27,37 +22,14 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	short_id := r.PathValue("short_id")
 
-	// usecase start
-	if err := validator.VarCtx(ctx, short_id, "short_id"); err != nil {
-		httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": "Invalid link format"})
-		return
-	}
-
-	var link entity.Link
-	err := h.repoFactory.InTransaction(ctx, func(r LinkRepo) error {
-		var txErr error
-		link, txErr = r.GetLinkByShortID(ctx, short_id)
-		if txErr != nil {
-			return txErr
-		}
-
-		txErr = r.UpdateLinkUsageInfo(ctx, link.ID)
-		if txErr != nil {
-			return txErr
-		}
-		return nil
+	result, err := h.usecase.Handle(ctx, usecase.GetLinkByShortIDData{
+		ShortID: short_id,
 	})
 	if err != nil {
-		if !errors.Is(err, ErrNoResult) {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		httpx.WriteJson(ctx, w, http.StatusNotFound, httpx.J{"msg": "Page not found"})
+		httpx.HandleError(ctx, w, err)
 		return
 	}
 
-	// usecase end
-
-	w.Header().Set("location", link.Href)
+	w.Header().Set("location", result.Href)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }

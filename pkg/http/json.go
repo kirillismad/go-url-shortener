@@ -22,14 +22,8 @@ func ReadJson[T any](ctx context.Context, r *http.Request) (T, error) {
 	return result, nil
 }
 
-func WriteJson[T any](ctx context.Context, w http.ResponseWriter, status int, content T) error {
-	b, err := json.Marshal(content)
-	if err != nil {
-		return errors.Join(ErrJsonMarshal, err)
-	}
-
+func WriteJson[T any](ctx context.Context, w http.ResponseWriter, status int, content T) {
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(status)
-	w.Write(b)
-	return nil
+	json.NewEncoder(w).Encode(content)
 }

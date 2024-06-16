@@ -15,7 +15,7 @@ type CreateLinkData struct {
 }
 
 type CreateLinkResult struct {
-	ShortLink string
+	ShortID string
 }
 
 type ICreateLinkHandler interface {
@@ -26,43 +26,47 @@ type CreateLinkHandler struct {
 	repoFactory LinkRepoFactory
 }
 
+func NewCreateLinkHandler(repoFactory LinkRepoFactory) ICreateLinkHandler {
+	h := new(CreateLinkHandler)
+	h.repoFactory = repoFactory
+	return h
+}
+
 func (h *CreateLinkHandler) Handle(ctx context.Context, data CreateLinkData) (CreateLinkResult, error) {
 	if err := validator.StructCtx(ctx, &data); err != nil {
-		// msg := fmt.Sprintf("Invalid link: %s", input.Href)
-		// httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": msg})
-		return CreateLinkResult{}, err
+		msg := fmt.Sprintf("Invalid link: %s", data.Href)
+		return CreateLinkResult{}, NewErrValidation(msg, err)
 	}
 
 	var link entity.Link
-	err := h.repoFactory.InTransaction(ctx, func(r LinkRepo) error {
+	err := h.repoFactory.InTransaction(ctx, func(repo LinkRepo) error {
 		var txErr error
-		link, txErr = r.GetLinkByHref(ctx, data.Href)
+		link, txErr = repo.GetLinkByHref(ctx, data.Href)
 		if txErr == nil {
 			return nil
 		}
 		if !errors.Is(txErr, ErrNoResult) {
-			return fmt.Errorf("r.GetLinkByHref: %w", txErr)
+			return fmt.Errorf("repo.GetLinkByHref: %w", txErr)
 		}
 
-		shortID, txErr := h.generateUniqueShortID(ctx, r)
+		shortID, txErr := h.generateUniqueShortID(ctx, repo)
 		if txErr != nil {
-			return fmt.Errorf("h.generateUniqueShortID: %w", txErr)
+			return txErr
 		}
 
-		link, txErr = r.CreateLink(ctx, CreateLinkArgs{
+		link, txErr = repo.CreateLink(ctx, CreateLinkArgs{
 			ShortID: shortID,
 			Href:    data.Href,
 		})
 		if txErr != nil {
-			return fmt.Errorf("r.CreateLink: %w", txErr)
+			return fmt.Errorf("repo.CreateLink: %w", txErr)
 		}
 		return txErr
 	})
 	if err != nil {
-		// w.WriteHeader(http.StatusInternalServerError)
 		return CreateLinkResult{}, err
 	}
-	return CreateLinkResult{ShortLink: "/s/" + link.ShortID}, nil
+	return CreateLinkResult{ShortID: link.ShortID}, nil
 }
 
 func (h *CreateLinkHandler) generateShortID() string {

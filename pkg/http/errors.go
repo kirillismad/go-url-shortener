@@ -4,24 +4,27 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
 )
 
 var (
 	ErrReadBody      = errors.New("read body error")
 	ErrJsonUnmarshal = errors.New("json unmarshal error")
-	ErrJsonMarshal   = errors.New("json marshal error")
 )
 
 func HandleError(ctx context.Context, w http.ResponseWriter, err error) {
+	var errValidation *usecase.ErrValidation
 	switch {
+	case errors.As(err, &errValidation):
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": err.Error()})
 	case errors.Is(err, ErrReadBody):
-		w.WriteHeader(http.StatusBadRequest)
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": err.Error()})
 	case errors.Is(err, ErrJsonUnmarshal):
-		w.WriteHeader(http.StatusBadRequest)
-	case errors.Is(err, ErrJsonMarshal):
-		w.WriteHeader(http.StatusInternalServerError)
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": err.Error()})
+	case errors.Is(err, usecase.ErrNoResult):
+		WriteJson(ctx, w, http.StatusNotFound, J{"msg": "not found"})
 	default:
-		w.WriteHeader(http.StatusInternalServerError)
+		WriteJson(ctx, w, http.StatusInternalServerError, J{"msg": err.Error()})
 	}
-	w.Write([]byte(err.Error()))
 }

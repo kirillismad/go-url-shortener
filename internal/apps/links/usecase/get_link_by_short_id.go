@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"errors"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
@@ -24,10 +23,15 @@ type GetLinkByShortIDHandler struct {
 	repoFactory LinkRepoFactory
 }
 
+func NewGetLinkByShortIDHandler(repoFactory LinkRepoFactory) IGetLinkByShortIDHandler {
+	h := new(GetLinkByShortIDHandler)
+	h.repoFactory = repoFactory
+	return h
+}
+
 func (h *GetLinkByShortIDHandler) Handle(ctx context.Context, data GetLinkByShortIDData) (GetLinkByShortIDResult, error) {
 	if err := validator.VarCtx(ctx, data.ShortID, "short_id"); err != nil {
-		// httpx.WriteJson(ctx, w, http.StatusBadRequest, httpx.J{"msg": "Invalid link format"})
-		return GetLinkByShortIDResult{}, err
+		return GetLinkByShortIDResult{}, NewErrValidation("Invalid link format", err)
 	}
 
 	var link entity.Link
@@ -45,12 +49,7 @@ func (h *GetLinkByShortIDHandler) Handle(ctx context.Context, data GetLinkByShor
 		return nil
 	})
 	if err != nil {
-		if !errors.Is(err, ErrNoResult) {
-			// w.WriteHeader(http.StatusInternalServerError)
-			return GetLinkByShortIDResult{}, err
-		}
 		return GetLinkByShortIDResult{}, err
-		// httpx.WriteJson(ctx, w, http.StatusNotFound, httpx.J{"msg": "Page not found"})
 	}
 	return GetLinkByShortIDResult{Href: link.Href}, nil
 }

@@ -1,7 +1,7 @@
 package repo
 
 import (
-	"github.com/kirillismad/go-url-shortener/internal/apps/links/http"
+	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
 	"github.com/kirillismad/go-url-shortener/pkg/sqlc"
 )
 
@@ -13,6 +13,6 @@ func newRepo(q *sqlc.Queries) *Repo {
 	return &Repo{q: q}
 }
 
-func NewLinkRepo(q *sqlc.Queries) http.LinkRepo {
+func NewLinkRepo(q *sqlc.Queries) usecase.LinkRepo {
 	return newRepo(q)
 }

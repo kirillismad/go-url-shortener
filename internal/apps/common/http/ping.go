@@ -25,11 +25,9 @@ func (h *PingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err := h.db.PingContext(ctx)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		httpx.HandleError(ctx, w, err)
 		return
 	}
 
-	if err := httpx.WriteJson(ctx, w, http.StatusOK, httpx.J{"msg": "pong"}); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-	}
+	httpx.WriteJson(ctx, w, http.StatusOK, httpx.J{"msg": "pong"})
 }
