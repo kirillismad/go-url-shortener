@@ -8,7 +8,7 @@ import (
 )
 
 type CreateLinkInput struct {
-	Href string `json:"href" validate:"http_url"`
+	Href string `json:"href"`
 }
 
 type CreateLinkOutput struct {
@@ -20,9 +20,9 @@ type CreateLinkHandler struct {
 }
 
 func NewCreateLinkHandler(usecase usecase.ICreateLinkHandler) *CreateLinkHandler {
-	h := new(CreateLinkHandler)
-	h.usecase = usecase
-	return h
+	return &CreateLinkHandler{
+		usecase: usecase,
+	}
 }
 
 func (h *CreateLinkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

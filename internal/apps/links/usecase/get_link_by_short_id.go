@@ -3,12 +3,13 @@ package usecase
 import (
 	"context"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/usecase"
 )
 
 type GetLinkByShortIDData struct {
-	ShortID string
+	ShortID string `validate:"required,short_id"`
 }
 
 type GetLinkByShortIDResult struct {
@@ -20,18 +21,25 @@ type IGetLinkByShortIDHandler interface {
 }
 
 type GetLinkByShortIDHandler struct {
-	repoFactory LinkRepoFactory
+	repoFactory usecase.RepoFactory[LinkRepo]
+	validator   *validator.Validate
 }
 
-func NewGetLinkByShortIDHandler(repoFactory LinkRepoFactory) IGetLinkByShortIDHandler {
-	h := new(GetLinkByShortIDHandler)
-	h.repoFactory = repoFactory
-	return h
+type GetLinkByShortIDParams struct {
+	RepoFactory usecase.RepoFactory[LinkRepo]
+	Validator   *validator.Validate
+}
+
+func NewGetLinkByShortIDHandler(params GetLinkByShortIDParams) IGetLinkByShortIDHandler {
+	return &GetLinkByShortIDHandler{
+		repoFactory: params.RepoFactory,
+		validator:   params.Validator,
+	}
 }
 
 func (h *GetLinkByShortIDHandler) Handle(ctx context.Context, data GetLinkByShortIDData) (GetLinkByShortIDResult, error) {
-	if err := validator.VarCtx(ctx, data.ShortID, "short_id"); err != nil {
-		return GetLinkByShortIDResult{}, NewErrValidation("Invalid link format", err)
+	if err := h.validator.StructCtx(ctx, data); err != nil {
+		return GetLinkByShortIDResult{}, usecase.NewErrValidation("Invalid link format", err)
 	}
 
 	var link entity.Link

@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/pkg/validator"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/usecase"
 )
 
 type CreateLinkData struct {
-	Href string
+	Href string `validate:"required,http_url"`
 }
 
 type CreateLinkResult struct {
@@ -23,19 +24,31 @@ type ICreateLinkHandler interface {
 }
 
 type CreateLinkHandler struct {
-	repoFactory LinkRepoFactory
+	repoFactory usecase.RepoFactory[LinkRepo]
+	validator   *validator.Validate
+	shortIDLen  int
+	alphabet    []rune
 }
 
-func NewCreateLinkHandler(repoFactory LinkRepoFactory) ICreateLinkHandler {
-	h := new(CreateLinkHandler)
-	h.repoFactory = repoFactory
-	return h
+type CreateLinkParams struct {
+	RepoFactory usecase.RepoFactory[LinkRepo]
+	Validator   *validator.Validate
+	ShortIDLen  int
+	Alphabet    []rune
+}
+
+func NewCreateLinkHandler(params CreateLinkParams) ICreateLinkHandler {
+	return &CreateLinkHandler{
+		repoFactory: params.RepoFactory,
+		validator:   params.Validator,
+		shortIDLen:  params.ShortIDLen,
+		alphabet:    params.Alphabet,
+	}
 }
 
 func (h *CreateLinkHandler) Handle(ctx context.Context, data CreateLinkData) (CreateLinkResult, error) {
-	if err := validator.StructCtx(ctx, &data); err != nil {
-		msg := fmt.Sprintf("Invalid link: %s", data.Href)
-		return CreateLinkResult{}, NewErrValidation(msg, err)
+	if err := h.validator.StructCtx(ctx, &data); err != nil {
+		return CreateLinkResult{}, usecase.NewErrValidation("Invalid request", err)
 	}
 
 	var link entity.Link
@@ -45,7 +58,7 @@ func (h *CreateLinkHandler) Handle(ctx context.Context, data CreateLinkData) (Cr
 		if txErr == nil {
 			return nil
 		}
-		if !errors.Is(txErr, ErrNoResult) {
+		if !errors.Is(txErr, usecase.ErrNoResult) {
 			return fmt.Errorf("repo.GetLinkByHref: %w", txErr)
 		}
 
@@ -70,17 +83,10 @@ func (h *CreateLinkHandler) Handle(ctx context.Context, data CreateLinkData) (Cr
 }
 
 func (h *CreateLinkHandler) generateShortID() string {
-	const (
-		shortIDLen = 11
-		alphabet   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnopqrstuvwxyz" + "0123456789" + "-_"
-	)
-
-	alph := []rune(alphabet)
-
-	b := make([]rune, 0, shortIDLen)
-	for i := 0; i < shortIDLen; i++ {
-		idx := rand.Intn(len(alph))
-		b = append(b, alph[idx])
+	b := make([]rune, 0, h.shortIDLen)
+	for i := 0; i < h.shortIDLen; i++ {
+		idx := rand.Intn(len(h.alphabet))
+		b = append(b, h.alphabet[idx])
 	}
 	return string(b)
 }

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/usecase"
 )
 
 var (
@@ -17,7 +17,7 @@ func HandleError(ctx context.Context, w http.ResponseWriter, err error) {
 	var errValidation *usecase.ErrValidation
 	switch {
 	case errors.As(err, &errValidation):
-		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": err.Error()})
+		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": errValidation.Error()})
 	case errors.Is(err, ErrReadBody):
 		WriteJson(ctx, w, http.StatusBadRequest, J{"msg": err.Error()})
 	case errors.Is(err, ErrJsonUnmarshal):

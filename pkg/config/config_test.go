@@ -30,9 +30,15 @@ func TestGetConfig(t *testing.T) {
 			SSLMode  string `env:"SSLMODE" yaml:"sslmode" validate:"required"`
 		}
 
+		type shortID struct {
+			Len      int    `env:"LEN" yaml:"len" validate:"min=8"`
+			Alphabet string `env:"ALPHABET" yaml:"alphabet" validate:"required"`
+		}
+
 		type config struct {
-			Server server `env:", prefix=SERVER_" yaml:"server" validate:"required"`
-			DB     db     `env:", prefix=DB_" yaml:"db" validate:"required"`
+			Server  server  `env:", prefix=SERVER_" yaml:"server" validate:"required"`
+			DB      db      `env:", prefix=DB_" yaml:"db" validate:"required"`
+			ShortID shortID `env:", prefix=SHORT_ID_" yaml:"short_id" validate:"required"`
 		}
 
 		t.Setenv("DB_USER", "dbuser")
@@ -62,6 +68,10 @@ func TestGetConfig(t *testing.T) {
 				Port:     5432,
 				Name:     "dbname",
 				SSLMode:  "disable",
+			},
+			ShortID: shortID{
+				Len:      11,
+				Alphabet: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_",
 			},
 		}
 

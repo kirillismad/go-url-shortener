@@ -12,12 +12,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 
 	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	validator10 "github.com/go-playground/validator/v10"
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
 	links_http "github.com/kirillismad/go-url-shortener/internal/apps/links/http"
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
@@ -27,21 +29,25 @@ import (
 
 type Config struct {
 	Server struct {
-		Host            string        `env:"HOST" yaml:"host"`
-		Port            uint          `env:"PORT" yaml:"port"`
-		ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" yaml:"shutdown_timeout"`
-		ReadTimeout     time.Duration `env:"READ_TIMEOUT" yaml:"read_timeout"`
-		WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" yaml:"write_timeout"`
-		IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" yaml:"idle_timeout"`
+		Host            string        `env:"HOST" yaml:"host" validate:"required"`
+		Port            uint          `env:"PORT" yaml:"port" validate:"required"`
+		ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" yaml:"shutdown_timeout" validate:"min=0s"`
+		ReadTimeout     time.Duration `env:"READ_TIMEOUT" yaml:"read_timeout" validate:"min=0s"`
+		WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" yaml:"write_timeout" validate:"min=0s"`
+		IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" yaml:"idle_timeout" validate:"min=0s"`
 	} `env:", prefix=SERVER_" yaml:"server" validate:"required"`
 	DB struct {
-		User     string `env:"USER, required" yaml:"user"`
-		Password string `env:"PASSWORD, required" yaml:"password"`
-		Host     string `env:"HOST, required" yaml:"host"`
-		Port     uint   `env:"PORT, required" yaml:"port"`
-		Name     string `env:"NAME, required" yaml:"name"`
-		SSLMode  string `env:"SSLMODE" yaml:"sslmode"`
+		User     string `env:"USER, required" yaml:"user" validate:"required"`
+		Password string `env:"PASSWORD, required" yaml:"password" validate:"required"`
+		Host     string `env:"HOST, required" yaml:"host" validate:"required"`
+		Port     uint   `env:"PORT, required" yaml:"port" validate:"required"`
+		Name     string `env:"NAME, required" yaml:"name" validate:"required"`
+		SSLMode  string `env:"SSLMODE" yaml:"sslmode" validate:"required"`
 	} `env:", prefix=DB_" yaml:"db" validate:"required"`
+	ShortID struct {
+		Len      int    `env:"LEN, required" yaml:"len" validate:"min=8"`
+		Alphabet string `env:"ALPHABET, required" yaml:"alphabet" validate:"required"`
+	} `env:", prefix=SHORT_ID_" yaml:"short_id" validate:"required"`
 }
 
 func main() {
@@ -53,6 +59,7 @@ func main() {
 	}
 	log.Printf("Working directory: %s\n", workDir)
 
+	// setup config
 	var configPath string
 	defaultConfigPath := filepath.Join(workDir, "config", "local.yaml")
 	flag.StringVar(&configPath, "config", defaultConfigPath, "config path")
@@ -65,6 +72,14 @@ func main() {
 	}
 	log.Printf("Configuration file: %s\n", configPath)
 
+	// setup validator
+	validator := validator10.New(validator10.WithRequiredStructEnabled())
+	pattern := regexp.MustCompile(fmt.Sprintf(`^[%s]{%d}$`, cfg.ShortID.Alphabet, cfg.ShortID.Len))
+	validator.RegisterValidation("short_id", func(fl validator10.FieldLevel) bool {
+		return pattern.MatchString(fl.Field().String())
+	})
+
+	// setup db
 	v := make(url.Values, 1)
 	v.Set("sslmode", cfg.DB.SSLMode)
 	connString := url.URL{
@@ -74,30 +89,39 @@ func main() {
 		Path:     cfg.DB.Name,
 		RawQuery: v.Encode(),
 	}
-
 	db, err := sql.Open("pgx", connString.String())
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	err = db.PingContext(ctx)
 	if err != nil {
 		log.Fatalf("db.Ping: %v", err)
 	}
 
+	// setup repos
 	linkRepoFactory := repo.NewRepoFactory(db, repo.NewLinkRepo)
 
+	// setup mux
 	mux := http.NewServeMux()
 	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
 	mux.Handle(
 		"POST /new",
-		links_http.NewCreateLinkHandler(usecase.NewCreateLinkHandler(linkRepoFactory)),
+		links_http.NewCreateLinkHandler(usecase.NewCreateLinkHandler(usecase.CreateLinkParams{
+			RepoFactory: linkRepoFactory,
+			Validator:   validator,
+			ShortIDLen:  cfg.ShortID.Len,
+			Alphabet:    []rune(cfg.ShortID.Alphabet),
+		})),
 	)
 	mux.Handle(
 		"GET /s/{short_id}",
-		links_http.NewRedirectHandler(usecase.NewGetLinkByShortIDHandler(linkRepoFactory)),
+		links_http.NewRedirectHandler(usecase.NewGetLinkByShortIDHandler(usecase.GetLinkByShortIDParams{
+			RepoFactory: linkRepoFactory,
+			Validator:   validator,
+		})),
 	)
 
+	// setup server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		Handler:      mux,

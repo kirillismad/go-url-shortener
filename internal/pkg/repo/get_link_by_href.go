@@ -6,7 +6,7 @@ import (
 	"errors"
 
 	"github.com/kirillismad/go-url-shortener/internal/apps/links/entity"
-	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/usecase"
 )
 
 func (r *Repo) GetLinkByHref(ctx context.Context, href string) (entity.Link, error) {

@@ -7,3 +7,6 @@ server:
   shutdown_timeout: 10s
 db:
   sslmode: disable
+short_id:
+  len: 11
+  alphabet: 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ

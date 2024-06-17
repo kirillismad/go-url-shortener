@@ -12,9 +12,9 @@ type RedirectHandler struct {
 }
 
 func NewRedirectHandler(usecase usecase.IGetLinkByShortIDHandler) *RedirectHandler {
-	h := new(RedirectHandler)
-	h.usecase = usecase
-	return h
+	return &RedirectHandler{
+		usecase: usecase,
+	}
 }
 
 func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
