@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -47,8 +46,7 @@ func TestGetConfig(t *testing.T) {
 		t.Setenv("DB_PORT", "5432")
 		t.Setenv("DB_NAME", "dbname")
 
-		ctx := context.Background()
-		cfg, err := GetConfig[config](ctx, "./testdata/test_config.yaml")
+		cfg, err := GetConfig[config]("./testdata/test_config.yaml")
 
 		r.NoError(err)
 
@@ -71,7 +69,7 @@ func TestGetConfig(t *testing.T) {
 			},
 			ShortID: shortID{
 				Len:      11,
-				Alphabet: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_",
+				Alphabet: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
 			},
 		}
 
