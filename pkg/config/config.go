@@ -12,7 +12,7 @@ import (
 
 var validate = validator.New(validator.WithRequiredStructEnabled())
 
-func GetConfig[T any](ctx context.Context, path string) (T, error) {
+func GetConfig[T any](path string) (T, error) {
 	var zero, config T
 
 	b, err := os.ReadFile(path)
@@ -25,11 +25,11 @@ func GetConfig[T any](ctx context.Context, path string) (T, error) {
 		return zero, fmt.Errorf("yaml.Unmarshal: %w", err)
 	}
 
-	if err := envconfig.Process(ctx, &config); err != nil {
+	if err := envconfig.Process(context.Background(), &config); err != nil {
 		return zero, fmt.Errorf("envconfig.Process: %w", err)
 	}
 
-	err = validate.StructCtx(ctx, &config)
+	err = validate.Struct(&config)
 	if err != nil {
 		return zero, fmt.Errorf("validate.StructCtx: %w", err)
 	}

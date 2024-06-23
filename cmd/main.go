@@ -58,15 +58,43 @@ type Dependencies struct {
 }
 
 func main() {
-	ctx := context.Background()
+	cfg := setUpConfig()
 
-	cfg := setUpConfig(ctx)
-
-	deps := setUpDeps(ctx, cfg)
+	deps := setUpDeps(cfg)
 
 	mux := setUpMux(cfg, deps)
 
-	server := setUpServer(cfg, mux)
+	shutdownFn := startServer(cfg, mux)
+
+	waitStop()
+
+	shutdownFn()
+}
+
+func waitStop() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	<-ch
+}
+
+func setUpDeps(cfg Config) *Dependencies {
+	validator := setUpValidator(cfg.ShortID.Alphabet, cfg.ShortID.Len)
+	db := setUpDb(cfg)
+	return &Dependencies{
+		Validator:       validator,
+		Db:              db,
+		LinkRepoFactory: repo.NewRepoFactory(db, repo.NewLinkRepo),
+	}
+}
+
+func startServer(cfg Config, mux *http.ServeMux) func() {
+	server := &http.Server{
+		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler:      mux,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
 
 	go func() {
 		log.Printf("Server is starting %s:%d\n", cfg.Server.Host, cfg.Server.Port)
@@ -76,44 +104,14 @@ func main() {
 		log.Println("Server stops serving new connections")
 	}()
 
-	waitStop()
+	return func() {
+		ctx, release := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+		defer release()
 
-	shutdown(ctx, cfg, server)
-}
-
-func shutdown(ctx context.Context, cfg Config, server *http.Server) {
-	ctx, release := context.WithTimeout(ctx, cfg.Server.ShutdownTimeout)
-	defer release()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("HTTP shutdown error: %v", err)
-	}
-	log.Println("Graceful shutdown complete.")
-}
-
-func waitStop() {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	<-ch
-}
-
-func setUpDeps(ctx context.Context, cfg Config) *Dependencies {
-	validator := setUpValidator(cfg.ShortID.Alphabet, cfg.ShortID.Len)
-	db := setUpDb(ctx, cfg)
-	return &Dependencies{
-		Validator:       validator,
-		Db:              db,
-		LinkRepoFactory: repo.NewRepoFactory(db, repo.NewLinkRepo),
-	}
-}
-
-func setUpServer(cfg Config, mux *http.ServeMux) *http.Server {
-	return &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
+		if err := server.Shutdown(ctx); err != nil {
+			log.Fatalf("HTTP shutdown error: %v", err)
+		}
+		log.Println("Graceful shutdown complete.")
 	}
 }
 
@@ -139,7 +137,7 @@ func setUpMux(cfg Config, deps *Dependencies) *http.ServeMux {
 	return mux
 }
 
-func setUpDb(ctx context.Context, cfg Config) *sql.DB {
+func setUpDb(cfg Config) *sql.DB {
 	v := make(url.Values, 1)
 	v.Set("sslmode", cfg.DB.SSLMode)
 	connString := url.URL{
@@ -153,7 +151,7 @@ func setUpDb(ctx context.Context, cfg Config) *sql.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = db.PingContext(ctx)
+	err = db.Ping()
 	if err != nil {
 		log.Fatalf("db.Ping: %v", err)
 	}
@@ -169,7 +167,7 @@ func setUpValidator(alphabet string, len int) *validator10.Validate {
 	return validator
 }
 
-func setUpConfig(ctx context.Context) Config {
+func setUpConfig() Config {
 	workDir, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("os.Getwd: %v", err)
@@ -182,7 +180,7 @@ func setUpConfig(ctx context.Context) Config {
 	flag.StringVar(&configPath, "c", defaultConfigPath, "config path")
 	flag.Parse()
 
-	cfg, err := config.GetConfig[Config](ctx, configPath)
+	cfg, err := config.GetConfig[Config](configPath)
 	if err != nil {
 		log.Fatalf("config.GetConfig: %v", err)
 	}
