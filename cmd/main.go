@@ -22,8 +22,9 @@ import (
 	validator10 "github.com/go-playground/validator/v10"
 	common_http "github.com/kirillismad/go-url-shortener/internal/apps/common/http"
 	links_http "github.com/kirillismad/go-url-shortener/internal/apps/links/http"
-	"github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
+	links_usecase "github.com/kirillismad/go-url-shortener/internal/apps/links/usecase"
 	"github.com/kirillismad/go-url-shortener/internal/pkg/repo"
+	"github.com/kirillismad/go-url-shortener/internal/pkg/usecase"
 	"github.com/kirillismad/go-url-shortener/pkg/config"
 )
 
@@ -50,36 +51,95 @@ type Config struct {
 	} `env:", prefix=SHORT_ID_" yaml:"short_id" validate:"required"`
 }
 
+type Dependencies struct {
+	Validator       *validator10.Validate
+	Db              *sql.DB
+	LinkRepoFactory usecase.RepoFactory[links_usecase.LinkRepo]
+}
+
 func main() {
 	ctx := context.Background()
 
-	workDir, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("os.Getwd: %v", err)
+	cfg := setUpConfig(ctx)
+
+	deps := setUpDeps(ctx, cfg)
+
+	mux := setUpMux(cfg, deps)
+
+	server := setUpServer(cfg, mux)
+
+	go func() {
+		log.Printf("Server is starting %s:%d\n", cfg.Server.Host, cfg.Server.Port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+		log.Println("Server stops serving new connections")
+	}()
+
+	waitStop()
+
+	shutdown(ctx, cfg, server)
+}
+
+func shutdown(ctx context.Context, cfg Config, server *http.Server) {
+	ctx, release := context.WithTimeout(ctx, cfg.Server.ShutdownTimeout)
+	defer release()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
 	}
-	log.Printf("Working directory: %s\n", workDir)
+	log.Println("Graceful shutdown complete.")
+}
 
-	// setup config
-	var configPath string
-	defaultConfigPath := filepath.Join(workDir, "config", "local.yaml")
-	flag.StringVar(&configPath, "config", defaultConfigPath, "config path")
-	flag.StringVar(&configPath, "c", defaultConfigPath, "config path")
-	flag.Parse()
+func waitStop() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	<-ch
+}
 
-	cfg, err := config.GetConfig[Config](ctx, configPath)
-	if err != nil {
-		log.Fatalf("config.GetConfig: %v", err)
+func setUpDeps(ctx context.Context, cfg Config) *Dependencies {
+	validator := setUpValidator(cfg.ShortID.Alphabet, cfg.ShortID.Len)
+	db := setUpDb(ctx, cfg)
+	return &Dependencies{
+		Validator:       validator,
+		Db:              db,
+		LinkRepoFactory: repo.NewRepoFactory(db, repo.NewLinkRepo),
 	}
-	log.Printf("Configuration file: %s\n", configPath)
+}
 
-	// setup validator
-	validator := validator10.New(validator10.WithRequiredStructEnabled())
-	pattern := regexp.MustCompile(fmt.Sprintf(`^[%s]{%d}$`, cfg.ShortID.Alphabet, cfg.ShortID.Len))
-	validator.RegisterValidation("short_id", func(fl validator10.FieldLevel) bool {
-		return pattern.MatchString(fl.Field().String())
-	})
+func setUpServer(cfg Config, mux *http.ServeMux) *http.Server {
+	return &http.Server{
+		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler:      mux,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
+}
 
-	// setup db
+func setUpMux(cfg Config, deps *Dependencies) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(deps.Db))
+	mux.Handle(
+		"POST /new",
+		links_http.NewCreateLinkHandler(links_usecase.NewCreateLinkHandler(links_usecase.CreateLinkParams{
+			RepoFactory: deps.LinkRepoFactory,
+			Validator:   deps.Validator,
+			ShortIDLen:  cfg.ShortID.Len,
+			Alphabet:    []rune(cfg.ShortID.Alphabet),
+		})),
+	)
+	mux.Handle(
+		"GET /s/{short_id}",
+		links_http.NewRedirectHandler(links_usecase.NewGetLinkByShortIDHandler(links_usecase.GetLinkByShortIDParams{
+			RepoFactory: deps.LinkRepoFactory,
+			Validator:   deps.Validator,
+		})),
+	)
+	return mux
+}
+
+func setUpDb(ctx context.Context, cfg Config) *sql.DB {
 	v := make(url.Values, 1)
 	v.Set("sslmode", cfg.DB.SSLMode)
 	connString := url.URL{
@@ -97,58 +157,35 @@ func main() {
 	if err != nil {
 		log.Fatalf("db.Ping: %v", err)
 	}
+	return db
+}
 
-	// setup repos
-	linkRepoFactory := repo.NewRepoFactory(db, repo.NewLinkRepo)
+func setUpValidator(alphabet string, len int) *validator10.Validate {
+	validator := validator10.New(validator10.WithRequiredStructEnabled())
+	pattern := regexp.MustCompile(fmt.Sprintf(`^[%s]{%d}$`, alphabet, len))
+	validator.RegisterValidation("short_id", func(fl validator10.FieldLevel) bool {
+		return pattern.MatchString(fl.Field().String())
+	})
+	return validator
+}
 
-	// setup mux
-	mux := http.NewServeMux()
-	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
-	mux.Handle(
-		"POST /new",
-		links_http.NewCreateLinkHandler(usecase.NewCreateLinkHandler(usecase.CreateLinkParams{
-			RepoFactory: linkRepoFactory,
-			Validator:   validator,
-			ShortIDLen:  cfg.ShortID.Len,
-			Alphabet:    []rune(cfg.ShortID.Alphabet),
-		})),
-	)
-	mux.Handle(
-		"GET /s/{short_id}",
-		links_http.NewRedirectHandler(usecase.NewGetLinkByShortIDHandler(usecase.GetLinkByShortIDParams{
-			RepoFactory: linkRepoFactory,
-			Validator:   validator,
-		})),
-	)
-
-	// setup server
-	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
+func setUpConfig(ctx context.Context) Config {
+	workDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("os.Getwd: %v", err)
 	}
+	log.Printf("Working directory: %s\n", workDir)
 
-	go func() {
-		log.Printf("Server is starting\n")
-		err := server.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("HTTP server error: %v", err)
-		}
-		log.Println("Server stops serving new connections")
-	}()
+	var configPath string
+	defaultConfigPath := filepath.Join(workDir, "config", "local.yaml")
+	flag.StringVar(&configPath, "config", defaultConfigPath, "config path")
+	flag.StringVar(&configPath, "c", defaultConfigPath, "config path")
+	flag.Parse()
 
-	// graceful shutdown
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	<-ch
-
-	ctx, release := context.WithTimeout(ctx, cfg.Server.ShutdownTimeout)
-	defer release()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("HTTP shutdown error: %v", err)
+	cfg, err := config.GetConfig[Config](ctx, configPath)
+	if err != nil {
+		log.Fatalf("config.GetConfig: %v", err)
 	}
-	log.Println("Graceful shutdown complete.")
+	log.Printf("Configuration file: %s\n", configPath)
+	return cfg
 }
