@@ -1,0 +1,5 @@
+with-expecter: true
+all: true
+packages:
+  github.com/kirillismad/go-url-shortener/internal/apps/links/usecase:
+  

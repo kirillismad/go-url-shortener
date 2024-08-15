@@ -60,9 +60,28 @@ type Dependencies struct {
 func main() {
 	cfg := setUpConfig()
 
-	deps := setUpDeps(cfg)
+	validator := setUpValidator(cfg.ShortID.Alphabet, cfg.ShortID.Len)
+	db := setUpDb(cfg)
+	linkRepoFactory := repo.NewRepoFactory(db, repo.NewLinkRepo)
 
-	mux := setUpMux(cfg, deps)
+	mux := http.NewServeMux()
+	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(db))
+	mux.Handle(
+		"POST /new",
+		links_http.NewCreateLinkHandler(links_usecase.NewCreateLinkHandler(links_usecase.CreateLinkParams{
+			RepoFactory: linkRepoFactory,
+			Validator:   validator,
+			ShortIDLen:  cfg.ShortID.Len,
+			Alphabet:    []rune(cfg.ShortID.Alphabet),
+		})),
+	)
+	mux.Handle(
+		"GET /s/{short_id}",
+		links_http.NewRedirectHandler(links_usecase.NewGetLinkByShortIDHandler(links_usecase.GetLinkByShortIDParams{
+			RepoFactory: linkRepoFactory,
+			Validator:   validator,
+		})),
+	)
 
 	shutdownFn := startServer(cfg, mux)
 
@@ -75,16 +94,6 @@ func waitStop() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
-}
-
-func setUpDeps(cfg Config) *Dependencies {
-	validator := setUpValidator(cfg.ShortID.Alphabet, cfg.ShortID.Len)
-	db := setUpDb(cfg)
-	return &Dependencies{
-		Validator:       validator,
-		Db:              db,
-		LinkRepoFactory: repo.NewRepoFactory(db, repo.NewLinkRepo),
-	}
 }
 
 func startServer(cfg Config, mux *http.ServeMux) func() {
@@ -113,28 +122,6 @@ func startServer(cfg Config, mux *http.ServeMux) func() {
 		}
 		log.Println("Graceful shutdown complete.")
 	}
-}
-
-func setUpMux(cfg Config, deps *Dependencies) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.Handle("GET /ping", common_http.NewPingHandler().WithDB(deps.Db))
-	mux.Handle(
-		"POST /new",
-		links_http.NewCreateLinkHandler(links_usecase.NewCreateLinkHandler(links_usecase.CreateLinkParams{
-			RepoFactory: deps.LinkRepoFactory,
-			Validator:   deps.Validator,
-			ShortIDLen:  cfg.ShortID.Len,
-			Alphabet:    []rune(cfg.ShortID.Alphabet),
-		})),
-	)
-	mux.Handle(
-		"GET /s/{short_id}",
-		links_http.NewRedirectHandler(links_usecase.NewGetLinkByShortIDHandler(links_usecase.GetLinkByShortIDParams{
-			RepoFactory: deps.LinkRepoFactory,
-			Validator:   deps.Validator,
-		})),
-	)
-	return mux
 }
 
 func setUpDb(cfg Config) *sql.DB {
